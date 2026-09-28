@@ -1,0 +1,126 @@
+name: Dynamic Flaky Test Detection Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_projects:
+        description: 'Maximum number of projects to run (leave empty for all)'
+        required: false
+        default: '5'
+
+jobs:
+  prepare:
+    name: Generate Dynamic Matrix from IDoFT
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: pip install pandas
+
+      - name: Generate Matrix JSON
+        id: set-matrix
+        env:
+          MAX_RUNS: ${{ github.event.inputs.max_projects }}
+        run: python .github/scripts/generate_matrix.py >> $GITHUB_OUTPUT
+
+  detect:
+    name: ${{ matrix.repo_name }} (${{ matrix.sha }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Checkout Target Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo_slug }}
+          ref: ${{ matrix.sha }}
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'corretto'
+
+      - name: Save Run Metadata
+        run: |
+          mkdir -p .output_metadata
+          cat <<EOF > .output_metadata/run_metadata.json
+          {
+            "github_url": "${{ matrix.repo_url }}",
+            "sha": "${{ matrix.sha }}",
+            "module_path": "${{ matrix.module_path }}"
+          }
+          EOF
+
+      - name: Run iDFlakies Detection
+        continue-on-error: true
+        run: |
+          cd ${{ matrix.module_path }}
+          mvn edu.illinois.cs:testrunner-maven-plugin:1.2:detect \
+            -Ddetector.detector_type=random-formal \
+            -Ddetector.dt.detector.round=5
+
+      - name: Run NonDex Detection
+        continue-on-error: true
+        run: |
+          cd ${{ matrix.module_path }}
+          mvn edu.illinois.cs:nondex-maven-plugin:2.1.7:nondex
+
+      - name: Archive Job Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.repo_name }}-${{ matrix.sha }}
+          path: |
+            .output_metadata/run_metadata.json
+            **/.dtfixingtools
+            **/.nondex
+          retention-days: 7
+
+  aggregate:
+    name: Aggregate Summary CSVs
+    needs: detect
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Download All Runner Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Run Aggregator Script
+        run: python .github/scripts/aggregate_results.py
+
+      - name: Upload iDFlakies Summary CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: idflakies_summary_csv
+          path: idflakies_summary.csv
+
+      - name: Upload NonDex Summary CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: nondex_summary_csv
+          path: nondex_summary.csv

@@ -1,11 +1,37 @@
-# Java & Maven outputs
+# Python cache & virtual environment
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+env/
+ENV/
+
+# Java & Maven build outputs
 target/
 *.class
 *.jar
+*.war
+*.ear
+.mvn/
 
-# Tool output directories & output artifacts
+# Tool detection output directories
 .dtfixingtools/
 .nondex/
+
+# Workflow runner artifacts & results
 artifacts/
 idflakies_summary.csv
 nondex_summary.csv
+flaky_test_summary.csv
+
+# IDE & Editor folders
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS system junk files
+.DS_Store
+Thumbs.db
