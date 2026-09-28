@@ -1,15 +1,52 @@
 # Automated Flaky Test Detection Pipeline for iDFlakies and NonDex
 ###### By: Your favorite loaf, Loafyy
 
+## 📌 Overview
+This repository provides an automated, scalable GitHub Actions pipeline designed to detect flaky tests across **Maven-based Java projects** in the IDoFT dataset (`pr-data.csv`).
+It runs two detection tools: **iDFlakies** and **NonDex** via standalone CLI commands without modifying the `pom.xml` or other features of the projects.
+After each run, results are parsed and aggregated into a clean pair of csv files: one for iDFlakies, the other for NonDex.
 
-## Overall Summary of What This Automated Pipeline Does
-This pipeline takes data in `pr-data.csv` from the IDoFT repo and takes all *unique* project and SHA entries. It then feeds these entries and creates a matrix that is usable by github workflows to run iDFlakies and NonDex automatically on a repository. If there are any errors, please let me know. The yaml currently accounts for `JDK 17` and `JDK 8` projects only! Projects or SHAs with other versions of Java may be skipped entirely!
+### ⚠️ DISCLAIMER
+As this is an automated process, there is a chance that some tests are missed. That being said, most should be recorded properly. Best of luck detectors, and I hope this kit finds you well!
 
-### DISCLAIMER
-As this is an automated process, there is a chance that some tests are missed! That being said, most should be recorded properly! Best of luck detectors, and I hope this kit finds you well.
+---
 
-## Usage Guide:
-This repo requires minimal setup. Parameters may be edited in the `yml` (yaml) file found in `.github/`.
+## ⚙️ How It Works
+
+1. **Dynamic Matrix Generation:**
+   * A pre-processing Python script (`generate_matrix.py`) reads `pr-data.csv` and builds a parallel GitHub Actions matrix.
+   * Supports pagination (`max_projects` and `offset` inputs) to easily process specific batches or chunks of the dataset.
+
+2. **Dual-JDK Fallback Execution (`setup-java` 8 & 17):**
+   * Projects are compiled and tested using **Java 8** first to preserve compatibility with legacy codebases.
+   * If a modern Java 17 sub-module is encountered (e.g., `invalid target release: 17`), the pipeline automatically falls back to **Java 17** execution without failing the workflow.
+
+3. **Flaky Test Tooling Execution:**
+   * **iDFlakies (`idflakies-maven-plugin:2.0.0`):** Shuffles test class and method execution orders (`random-class-method`) to uncover Order-Dependent (OD) test flakiness.
+   * **NonDex (`nondex-maven-plugin:2.2.1`):** Explores non-deterministic iteration orders in underlying Java collection APIs (e.g., `HashMap`, `HashSet`) to detect Implementation-Dependent (ID) flakiness.
+
+4. **Recursive Parsing & Artifact Aggregation:**
+   * Downstream jobs automatically collect generated artifacts, including hidden dot-directories (`.dtfixingtools`, `.nondex`).
+   * A sanitizing script (`aggregate_results.py`) recursively searches detection logs, filters out stack traces and build log noise using strict Java identifier regex, and writes clean results.
+
+---
+
+## 📊 Summary Output Format
+
+The workflow outputs two aggregated CSV artifacts:
+* `idflakies_summary.csv`
+* `nondex_summary.csv`
+
+Each CSV strictly adheres to the following 3-column format:
+
+| Github Link | SHA | Flaky Test Identified |
+| :--- | :--- | :--- |
+| `https://github.com/user/repo` | `1764748eedb2f320a0d1c43cb4f928c4ccb1f2f5` | `com.example.pkg.MyTest.testMethod` |
+
+---
+
+## 🚀 Usage Guide:
+This repo requires minimal setup and zero YAML config editing.
 
 ### Step 1: Fork or Clone This Repository
 This will allow you to have your own space to run your tests.
