@@ -101,13 +101,14 @@ jobs:
 
           echo "Running iDFlakies with a maximum execution timeout of $IDFLAKIES_TIMEOUT..."
 
-          # Execute iDFlakies using bash -c so timeout handles environment variables correctly
+          # Execute iDFlakies using bash -c with timeout and explicit failure ignore flags
           timeout $IDFLAKIES_TIMEOUT bash -c "JAVA_HOME=\$JAVA_HOME_8_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
             -B \
             -Ddetector.detector_type=random-class-method \
             -Ddt.randomize.rounds=10 \
             -Ddt.detector.original_order.all_must_pass=false \
             -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true" || \
@@ -117,6 +118,7 @@ jobs:
             -Ddt.randomize.rounds=10 \
             -Ddt.detector.original_order.all_must_pass=false \
             -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true" || true
@@ -126,27 +128,23 @@ jobs:
         run: |
           cd ${{ matrix.module_path }}
           
-          # Execute NonDex with increased runs and explicit FULL shuffling mode
+          # Execute NonDex with explicit failure ignore flags and increased runs
           JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
-            -B \
+            -q -B \
             -DnondexRuns=10 \
             -DnondexMode=FULL \
-            -Dsurefire.timeout=${{ inputs.surefire_timeout || 60 }} \
-            -DforkCount=1 \
-            -DreuseForks=false \
             -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
             -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || \
           JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
-            -B \
+            -q -B \
             -DnondexRuns=10 \
             -DnondexMode=FULL \
-            -Dsurefire.timeout=${{ inputs.surefire_timeout || 60 }} \
-            -DforkCount=1 \
-            -DreuseForks=false \
             -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
             -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
@@ -161,6 +159,7 @@ jobs:
             **/run_metadata.json
             **/.dtfixingtools/**
             **/.nondex/**
+            **/failing-test-output*/**
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
