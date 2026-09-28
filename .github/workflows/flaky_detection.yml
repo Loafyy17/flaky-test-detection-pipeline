@@ -84,8 +84,8 @@ jobs:
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          # Run NonDex using published version 2.1.1
-          mvn edu.illinois.cs:nondex-maven-plugin:2.1.1:nondex \
+          # Run NonDex with the updated groupId (edu.illinois) and version 2.1.1
+          mvn edu.illinois:nondex-maven-plugin:2.1.1:nondex \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
             -Dmaven.javadoc.skip=true
