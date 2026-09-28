@@ -21,13 +21,13 @@ matrix_include = []
 for _, row in deduped.iterrows():
     repo_url = str(row['Project URL']).strip()
     
-    # Clean repo slug (e.g. "https://github.com/owner/repo" -> "owner/repo")
+    # Extract owner/repo (e.g., "https://github.com/owner/repo" -> "owner/repo")
     repo_slug = repo_url.replace("https://github.com/", "").rstrip("/").replace(".git", "")
     repo_name = repo_slug.split("/")[-1]
     
     matrix_include.append({
         "repo_url": repo_url,
-        "repo_slug": repo_slug,  # Added clean owner/repo slug
+        "repo_slug": repo_slug,
         "repo_name": repo_name,
         "sha": str(row['SHA Detected']).strip(),
         "module_path": str(row['Module Path']).strip() if pd.notna(row['Module Path']) else "."
