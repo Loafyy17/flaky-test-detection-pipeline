@@ -2,7 +2,6 @@ import os
 import glob
 import json
 import csv
-import re
 
 IDFLAKIES_CSV = "idflakies_summary.csv"
 NONDEX_CSV = "nondex_summary.csv"
@@ -12,16 +11,18 @@ headers = ["Github Link", "SHA", "Flaky Test Identified"]
 idflakies_rows = []
 nondex_rows = []
 
-# Files inside .dtfixingtools/ that contain test baselines/metadata and MUST BE IGNORED
+# Baseline and metadata files inside .dtfixingtools/ that MUST BE IGNORED
 IDFLAKIES_IGNORED_FILES = {
     "original-order",
     "classpath",
     "blacklisted-tests",
     "test-orders",
-    "pom.xml"
+    "pom.xml",
+    ".keep"
 }
 
 def clean_and_validate_test_name(raw_line):
+    """Validates and cleans raw lines/strings into a valid Java test identifier."""
     if not raw_line or not isinstance(raw_line, str):
         return None
     
@@ -35,8 +36,12 @@ def clean_and_validate_test_name(raw_line):
         line.startswith("[") or 
         line.startswith("at ") or 
         line.startswith("INFO") or 
+        line.startswith("WARN") or 
+        line.startswith("ERROR") or 
         line.startswith("Tests run:") or 
-        line.startswith("Test set:")
+        line.startswith("Test set:") or
+        "InaccessibleObjectException" in line or
+        "LogFactory" in line
     ):
         return None
     
@@ -59,21 +64,19 @@ def clean_and_validate_test_name(raw_line):
 
 
 def extract_tests_from_json(data):
-    """Recursively search any JSON object/list for test names."""
+    """Recursively searches JSON structures for flaky test names."""
     found_tests = []
     
     if isinstance(data, list):
         for item in data:
             found_tests.extend(extract_tests_from_json(item))
     elif isinstance(data, dict):
-        # Look for direct test name keys
         for key in ["test_name", "testName", "name", "test"]:
             if key in data and isinstance(data[key], str):
                 cleaned = clean_and_validate_test_name(data[key])
                 if cleaned:
                     found_tests.append(cleaned)
         
-        # Look for list properties containing flaky tests
         for key, val in data.items():
             if key in ["detected_tests", "flakyTests", "flaky_tests", "detected", "tests"] and isinstance(val, list):
                 for item in val:
@@ -130,7 +133,6 @@ for art_dir in artifact_dirs:
         continue
 
     # --- 2. Parse iDFlakies Results ---
-    # Ignore metadata files like 'original-order' and only parse actual failure logs/JSON
     idflakies_files = [
         f for f in all_files 
         if f.startswith(art_dir) 
@@ -148,7 +150,7 @@ for art_dir in artifact_dirs:
                     for t_name in detected:
                         idflakies_rows.append([github_url, sha, t_name])
             else:
-                # Text/Log format fallback for files like 'failing-tests'
+                # Reads list.txt, failing-tests, or text log outputs
                 with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
                         cleaned = clean_and_validate_test_name(line)
@@ -157,7 +159,23 @@ for art_dir in artifact_dirs:
         except Exception as e:
             print(f"Error reading iDFlakies file {res_file}: {e}")
 
-    # --- 3. Parse NonDex Results ---
+    # --- 3. Extract Test Names directly from failing-test-output paths/directories ---
+    failing_output_paths = [
+        f for f in all_files 
+        if f.startswith(art_dir) and "failing-test-output" in f
+    ]
+    for out_path in failing_output_paths:
+        path_parts = out_path.replace("\\", "/").split("/")
+        for part in path_parts:
+            # Strip Surefire prefixes or extensions if present (e.g., TEST-com.example.FooTest.xml)
+            if part.startswith("TEST-"):
+                part = part.replace("TEST-", "").replace(".xml", "").replace(".txt", "")
+            
+            cleaned = clean_and_validate_test_name(part)
+            if cleaned:
+                idflakies_rows.append([github_url, sha, cleaned])
+
+    # --- 4. Parse NonDex Results ---
     nondex_files = [
         f for f in all_files 
         if f.startswith(art_dir) and ".nondex" in f and not any(
