@@ -54,9 +54,9 @@ jobs:
           java-version: '8'
           distribution: 'corretto'
 
-      - name: Save Run Metadata
+      - name: Save Run Metadata & Pre-create Output Directories
         run: |
-          mkdir -p .output_metadata
+          mkdir -p .output_metadata .dtfixingtools .nondex
           cat <<EOF > .output_metadata/run_metadata.json
           {
             "github_url": "${{ matrix.repo_url }}",
@@ -102,8 +102,9 @@ jobs:
           name: results-${{ matrix.repo_name }}-${{ matrix.sha }}
           path: |
             .output_metadata/run_metadata.json
-            **/.dtfixingtools
-            **/.nondex
+            **/.dtfixingtools/**
+            **/.nondex/**
+          if-no-files-found: ignore
           retention-days: 7
 
   aggregate:
