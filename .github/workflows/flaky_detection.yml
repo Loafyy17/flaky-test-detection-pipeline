@@ -45,7 +45,7 @@ jobs:
       - name: Checkout Target Repository
         uses: actions/checkout@v4
         with:
-          repository: ${{ replace(matrix.repo_url, 'https://github.com/', '') }}
+          repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
       - name: Set up JDK 8
