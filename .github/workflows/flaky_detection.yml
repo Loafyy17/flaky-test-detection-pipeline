@@ -69,11 +69,12 @@ jobs:
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          # Pre-compile test classes and skip non-critical checks
-          mvn test-compile -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          # Pre-compile quietly
+          mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
           
-          # Run iDFlakies using the valid 'testplugin' goal
+          # Run iDFlakies in quiet mode
           mvn edu.illinois.cs:testrunner-maven-plugin:1.2:testplugin \
+            -q -B \
             -Ddetector.detector_type=random-formal \
             -Ddetector.dt.detector.round=5 \
             -DfailIfNoTests=false \
@@ -84,8 +85,9 @@ jobs:
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          # Run NonDex with the updated groupId (edu.illinois) and version 2.1.1
+          # Run NonDex in quiet mode
           mvn edu.illinois:nondex-maven-plugin:2.1.1:nondex \
+            -q -B \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
             -Dmaven.javadoc.skip=true
