@@ -48,8 +48,10 @@ Each CSV strictly adheres to the following 3-column format:
 ## 🚀 Usage Guide:
 This repo requires minimal setup and zero YAML config editing.
 
-### Step 1: Fork or Clone This Repository
+### Step 1: Fork This Repository
 This will allow you to have your own space to run your tests.
+> **Note for Forks:** When running in a newly forked repository, go to the **Actions** tab and click **"I understand my workflows, go ahead and enable them"** to enable execution.
+
 
 ### Step 2: Go to ACTIONS Tab on GitHub
 This should take you to a screen where you can select workflows.  
