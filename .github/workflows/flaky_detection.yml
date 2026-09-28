@@ -11,6 +11,10 @@ on:
         description: 'Starting row index in pr-data.csv (0-based)'
         required: false
         default: '0'
+      max_job_timeout:
+        description: 'Maximum time limit per detection job in minutes (e.g., 15, 30)'
+        required: false
+        default: '20'
 
 jobs:
   prepare:
@@ -41,6 +45,7 @@ jobs:
     name: ${{ matrix.repo_name }} (${{ matrix.sha }})
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.max_job_timeout != '' && toJson(inputs.max_job_timeout) || 20 }}
     strategy:
       fail-fast: false
       max-parallel: 10
@@ -77,7 +82,9 @@ jobs:
           }
           EOF
 
-          cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
+          if [ "${{ matrix.module_path }}" != "." ]; then
+            cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
+          fi
 
       - name: Run iDFlakies Detection (Auto Fallback JDK 8 -> 17)
         continue-on-error: true
@@ -88,8 +95,14 @@ jobs:
           JAVA_HOME=$JAVA_HOME_8_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || \
           JAVA_HOME=$JAVA_HOME_17_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
           
-          # Execute iDFlakies with matching JDK
-          JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+          # Calculate iDFlakies time limit (Job timeout minus 5 min buffer for setup/nondex, min 5m)
+          JOB_TIMEOUT=${{ inputs.max_job_timeout != '' && inputs.max_job_timeout || 20 }}
+          IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
+
+          echo "Running iDFlakies with a maximum execution timeout of $IDFLAKIES_TIMEOUT..."
+
+          # Execute iDFlakies with matching JDK wrapped in timeout
+          timeout $IDFLAKIES_TIMEOUT JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
             -B \
             -Ddetector.detector_type=random-class-method \
             -Ddt.randomize.rounds=10 \
@@ -98,7 +111,7 @@ jobs:
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true || \
-          JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+          timeout $IDFLAKIES_TIMEOUT JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
             -B \
             -Ddetector.detector_type=random-class-method \
             -Ddt.randomize.rounds=10 \
