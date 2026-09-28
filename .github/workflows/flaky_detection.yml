@@ -45,7 +45,7 @@ jobs:
     name: ${{ matrix.repo_name }} (${{ matrix.sha }})
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.max_job_timeout != '' && toJson(inputs.max_job_timeout) || 20 }}
+    timeout-minutes: ${{ inputs.max_job_timeout != '' && fromJson(inputs.max_job_timeout) || 20 }}
     strategy:
       fail-fast: false
       max-parallel: 10
