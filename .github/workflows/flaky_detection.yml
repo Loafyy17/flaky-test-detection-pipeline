@@ -69,15 +69,26 @@ jobs:
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          mvn edu.illinois.cs:testrunner-maven-plugin:1.2:detect \
+          # Pre-compile test classes and skip non-critical checks
+          mvn test-compile -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          
+          # Run iDFlakies using the valid 'testplugin' goal
+          mvn edu.illinois.cs:testrunner-maven-plugin:1.2:testplugin \
             -Ddetector.detector_type=random-formal \
-            -Ddetector.dt.detector.round=5
+            -Ddetector.dt.detector.round=5 \
+            -DfailIfNoTests=false \
+            -Dcheckstyle.skip=true \
+            -Dmaven.javadoc.skip=true
 
       - name: Run NonDex Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          mvn edu.illinois.cs:nondex-maven-plugin:2.1.7:nondex
+          # Run NonDex using published version 2.1.1
+          mvn edu.illinois.cs:nondex-maven-plugin:2.1.1:nondex \
+            -DfailIfNoTests=false \
+            -Dcheckstyle.skip=true \
+            -Dmaven.javadoc.skip=true
 
       - name: Archive Job Results
         uses: actions/upload-artifact@v4
