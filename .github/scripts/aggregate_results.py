@@ -12,6 +12,15 @@ headers = ["Github Link", "SHA", "Flaky Test Identified"]
 idflakies_rows = []
 nondex_rows = []
 
+# Files inside .dtfixingtools/ that contain test baselines/metadata and MUST BE IGNORED
+IDFLAKIES_IGNORED_FILES = {
+    "original-order",
+    "classpath",
+    "blacklisted-tests",
+    "test-orders",
+    "pom.xml"
+}
+
 def clean_and_validate_test_name(raw_line):
     if not raw_line or not isinstance(raw_line, str):
         return None
@@ -121,11 +130,13 @@ for art_dir in artifact_dirs:
         continue
 
     # --- 2. Parse iDFlakies Results ---
+    # Ignore metadata files like 'original-order' and only parse actual failure logs/JSON
     idflakies_files = [
         f for f in all_files 
-        if f.startswith(art_dir) and ".dtfixingtools" in f and not any(
-            f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class"]
-        )
+        if f.startswith(art_dir) 
+        and ".dtfixingtools" in f 
+        and os.path.basename(f) not in IDFLAKIES_IGNORED_FILES
+        and not any(f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class"])
     ]
 
     for res_file in idflakies_files:
@@ -137,7 +148,7 @@ for art_dir in artifact_dirs:
                     for t_name in detected:
                         idflakies_rows.append([github_url, sha, t_name])
             else:
-                # Text/Log format fallback
+                # Text/Log format fallback for files like 'failing-tests'
                 with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
                         cleaned = clean_and_validate_test_name(line)
