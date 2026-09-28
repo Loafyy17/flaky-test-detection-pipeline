@@ -72,21 +72,22 @@ jobs:
           # Pre-compile test classes quietly
           mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
           
-          # Run iDFlakies quietly using the valid 'testplugin' goal
+          # Run iDFlakies without -q to allow process output to log
           mvn edu.illinois.cs:testrunner-maven-plugin:1.2:testplugin \
-            -q -B \
-            -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
+            -B \
             -Ddetector.detector_type=random-formal \
-            -Ddetector.dt.detector.round=5 \
+            -Ddt.detector.round=5 \
+            -Ddt.detector.original_order=true \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
+            -Drat.skip=true \
             -Dmaven.javadoc.skip=true
 
       - name: Run NonDex Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          # Run NonDex with edu.illinois groupId, SLF4J warn logging, and grep filtering for debug output
+          # Run NonDex using edu.illinois:nondex-maven-plugin:2.1.1
           mvn edu.illinois:nondex-maven-plugin:2.1.1:nondex \
             -q -B \
             -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
