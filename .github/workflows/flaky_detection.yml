@@ -136,6 +136,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          include-hidden-files: true
 
       - name: Run Aggregator Script
         run: python .github/scripts/aggregate_results.py
