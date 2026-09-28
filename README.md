@@ -2,7 +2,7 @@
 ###### By: Your favorite loaf, Loafyy
 
 ## Usage Guide:
-This repo requires minimal setup.
+This repo requires minimal setup. Parameters may be edited in the `yml` (yaml) file found in `.github/`.
 
 ### Step 1: Fork or Clone This Repository
 This will allow you to have your own space to run your tests.
@@ -34,3 +34,6 @@ The artifacts we are looking for are `idflakies_summary_csv` and `nondex_summary
 
 ## Overall Summary of What This Automated Pipeline Does
 This pipeline takes data in `pr-data.csv` from the IDoFT repo and takes all *unique* project and SHA entries. It then feeds these entries and creates a matrix that is usable by github workflows to run iDFlakies and NonDex automatically on a repository. If there are any errors, please let me know. The yaml currently accounts for `JDK 17` and `JDK 8` projects only! Projects or SHAs with other versions of Java may be skipped entirely!
+
+### DISCLAIMER
+As this is an automated process, there is a chance that some tests are missed! That being said, most should be recorded properly! Best of luck detectors, and I hope this kit finds you well.
