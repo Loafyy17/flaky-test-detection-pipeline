@@ -7,6 +7,10 @@ on:
         description: 'Maximum number of projects to run (leave empty for all)'
         required: false
         default: '5'
+      offset:
+        description: 'Starting row index in pr-data.csv (0-based)'
+        required: false
+        default: '0'
 
 jobs:
   prepare:
@@ -30,6 +34,7 @@ jobs:
         id: set-matrix
         env:
           MAX_RUNS: ${{ github.event.inputs.max_projects }}
+          OFFSET: ${{ github.event.inputs.offset }}
         run: python .github/scripts/generate_matrix.py >> $GITHUB_OUTPUT
 
   detect:
@@ -48,10 +53,10 @@ jobs:
           repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
-      - name: Set up JDK 8
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '8'
+          java-version: '17'
           distribution: 'corretto'
 
       - name: Save Run Metadata & Pre-create Output Directories
@@ -90,7 +95,7 @@ jobs:
             -Dmaven.test.failure.ignore=true \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
-            -Dmaven.javadoc.skip=true
+            -Dmaven.javadoc.skip=true || true
 
       - name: Run NonDex Detection
         continue-on-error: true
