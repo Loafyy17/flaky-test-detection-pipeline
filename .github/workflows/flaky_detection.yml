@@ -56,10 +56,14 @@ jobs:
 
       - name: Save Run Metadata & Pre-create Output Directories
         run: |
-          # Create metadata and output folders at repository root AND target module directory
+          # Create output directories at both root and target module path
           mkdir -p .output_metadata .dtfixingtools .nondex
           mkdir -p ${{ matrix.module_path }}/.output_metadata ${{ matrix.module_path }}/.dtfixingtools ${{ matrix.module_path }}/.nondex
-          
+
+          # Place placeholder files so upload-artifact recognizes the directories
+          touch .dtfixingtools/.keep .nondex/.keep
+          touch ${{ matrix.module_path }}/.dtfixingtools/.keep ${{ matrix.module_path }}/.nondex/.keep
+
           cat <<EOF > .output_metadata/run_metadata.json
           {
             "github_url": "${{ matrix.repo_url }}",
@@ -67,8 +71,7 @@ jobs:
             "module_path": "${{ matrix.module_path }}"
           }
           EOF
-          
-          # Also place a copy inside the module path for consistent artifact matching
+
           cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
 
       - name: Run iDFlakies Detection
@@ -108,9 +111,9 @@ jobs:
           name: results-${{ matrix.repo_name }}-${{ matrix.sha }}
           path: |
             **/run_metadata.json
-            **/.dtfixingtools/*
-            **/.nondex/*
-          if-no-files-found: warn
+            **/.dtfixingtools/**
+            **/.nondex/**
+          if-no-files-found: ignore
           retention-days: 7
 
   aggregate:
