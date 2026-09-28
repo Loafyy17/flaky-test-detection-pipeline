@@ -7,4 +7,5 @@ target/
 .dtfixingtools/
 .nondex/
 artifacts/
-flaky_test_summary.csv
+idflakies_summary.csv
+nondex_summary.csv
