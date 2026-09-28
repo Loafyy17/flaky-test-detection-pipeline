@@ -7,6 +7,10 @@ on:
         description: 'Maximum number of projects to run (leave empty for all)'
         required: false
         default: '5'
+      offset:
+        description: 'Starting row index in pr-data.csv (0-based)'
+        required: false
+        default: '0'
 
 jobs:
   prepare:
@@ -30,6 +34,7 @@ jobs:
         id: set-matrix
         env:
           MAX_RUNS: ${{ github.event.inputs.max_projects }}
+          OFFSET: ${{ github.event.inputs.offset }}
         run: python .github/scripts/generate_matrix.py >> $GITHUB_OUTPUT
 
   detect:
@@ -48,15 +53,22 @@ jobs:
           repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
-      - name: Set up JDK 8
+      - name: Set up Java 8 and 17
         uses: actions/setup-java@v4
         with:
-          java-version: '8'
           distribution: 'corretto'
+          java-version: |
+            8
+            17
 
-      - name: Save Run Metadata
+      - name: Save Run Metadata & Pre-create Output Directories
         run: |
-          mkdir -p .output_metadata
+          mkdir -p .output_metadata .dtfixingtools .nondex
+          mkdir -p ${{ matrix.module_path }}/.output_metadata ${{ matrix.module_path }}/.dtfixingtools ${{ matrix.module_path }}/.nondex
+
+          touch .dtfixingtools/.keep .nondex/.keep
+          touch ${{ matrix.module_path }}/.dtfixingtools/.keep ${{ matrix.module_path }}/.nondex/.keep
+
           cat <<EOF > .output_metadata/run_metadata.json
           {
             "github_url": "${{ matrix.repo_url }}",
@@ -65,30 +77,55 @@ jobs:
           }
           EOF
 
-      - name: Run iDFlakies Detection
-        continue-on-error: true
-        run: |
-          cd ${{ matrix.module_path }}
-          # Pre-compile test classes and skip non-critical checks
-          mvn test-compile -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
-          
-          # Run iDFlakies using the valid 'testplugin' goal
-          mvn edu.illinois.cs:testrunner-maven-plugin:1.2:testplugin \
-            -Ddetector.detector_type=random-formal \
-            -Ddetector.dt.detector.round=5 \
-            -DfailIfNoTests=false \
-            -Dcheckstyle.skip=true \
-            -Dmaven.javadoc.skip=true
+          cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
 
-      - name: Run NonDex Detection
+      - name: Run iDFlakies Detection (Auto Fallback JDK 8 -> 17)
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          # Run NonDex using published version 2.1.1
-          mvn edu.illinois.cs:nondex-maven-plugin:2.1.1:nondex \
-            -DfailIfNoTests=false \
+          
+          # Attempt compilation with JDK 8 first; fallback to JDK 17 on error
+          JAVA_HOME=$JAVA_HOME_8_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || \
+          JAVA_HOME=$JAVA_HOME_17_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          
+          # Execute iDFlakies with matching JDK
+          JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+            -B \
+            -Ddetector.detector_type=random-class-method \
+            -Ddt.randomize.rounds=10 \
+            -Ddt.detector.original_order.all_must_pass=false \
+            -Dmaven.test.failure.ignore=true \
             -Dcheckstyle.skip=true \
-            -Dmaven.javadoc.skip=true
+            -Drat.skip=true \
+            -Dmaven.javadoc.skip=true || \
+          JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+            -B \
+            -Ddetector.detector_type=random-class-method \
+            -Ddt.randomize.rounds=10 \
+            -Ddt.detector.original_order.all_must_pass=false \
+            -Dmaven.test.failure.ignore=true \
+            -Dcheckstyle.skip=true \
+            -Drat.skip=true \
+            -Dmaven.javadoc.skip=true || true
+
+      - name: Run NonDex Detection (Auto Fallback JDK 8 -> 17)
+        continue-on-error: true
+        run: |
+          cd ${{ matrix.module_path }}
+          
+          # Attempt NonDex execution with JDK 8 first; fallback to JDK 17
+          JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
+            -q -B \
+            -Dmaven.test.failure.ignore=true \
+            -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
+            -Dcheckstyle.skip=true \
+            -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || \
+          JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
+            -q -B \
+            -Dmaven.test.failure.ignore=true \
+            -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
+            -Dcheckstyle.skip=true \
+            -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || true
 
       - name: Archive Job Results
         uses: actions/upload-artifact@v4
@@ -96,9 +133,11 @@ jobs:
         with:
           name: results-${{ matrix.repo_name }}-${{ matrix.sha }}
           path: |
-            .output_metadata/run_metadata.json
-            **/.dtfixingtools
-            **/.nondex
+            **/run_metadata.json
+            **/.dtfixingtools/**
+            **/.nondex/**
+          include-hidden-files: true
+          if-no-files-found: ignore
           retention-days: 7
 
   aggregate:
@@ -120,6 +159,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          include-hidden-files: true
 
       - name: Run Aggregator Script
         run: python .github/scripts/aggregate_results.py

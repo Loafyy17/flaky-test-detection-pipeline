@@ -2,72 +2,183 @@ import os
 import glob
 import json
 import csv
+import re
 
 IDFLAKIES_CSV = "idflakies_summary.csv"
 NONDEX_CSV = "nondex_summary.csv"
 
-headers = ["Github Link", "SHA", "Tool Name", "Flaky Test Identified"]
+headers = ["Github Link", "SHA", "Flaky Test Identified"]
 
 idflakies_rows = []
 nondex_rows = []
 
+def clean_and_validate_test_name(raw_line):
+    if not raw_line or not isinstance(raw_line, str):
+        return None
+    
+    line = raw_line.strip()
+    
+    # Ignore metadata, comments, logs, and stack traces
+    if (
+        not line or 
+        line.startswith("#") or 
+        line.startswith("<") or 
+        line.startswith("[") or 
+        line.startswith("at ") or 
+        line.startswith("INFO") or 
+        line.startswith("Tests run:") or 
+        line.startswith("Test set:")
+    ):
+        return None
+    
+    # Strip common Maven/Surefire trailing suffixes
+    if " -- " in line:
+        line = line.split(" -- ")[0].strip()
+    if " <<<" in line:
+        line = line.split(" <<<")[0].strip()
+    if "(" in line and ")" in line:
+        line = line.split("(")[0].strip()
+    if " " in line:
+        line = line.split()[0].strip()
+
+    # Must be a valid Java test identifier (at least 2 dots, e.g., com.example.FooTest.testBar)
+    parts = line.split(".")
+    if len(parts) >= 3 and all(p.isidentifier() for p in parts):
+        return line
+    
+    return None
+
+
+def extract_tests_from_json(data):
+    """Recursively search any JSON object/list for test names."""
+    found_tests = []
+    
+    if isinstance(data, list):
+        for item in data:
+            found_tests.extend(extract_tests_from_json(item))
+    elif isinstance(data, dict):
+        # Look for direct test name keys
+        for key in ["test_name", "testName", "name", "test"]:
+            if key in data and isinstance(data[key], str):
+                cleaned = clean_and_validate_test_name(data[key])
+                if cleaned:
+                    found_tests.append(cleaned)
+        
+        # Look for list properties containing flaky tests
+        for key, val in data.items():
+            if key in ["detected_tests", "flakyTests", "flaky_tests", "detected", "tests"] and isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str):
+                        cleaned = clean_and_validate_test_name(item)
+                        if cleaned:
+                            found_tests.append(cleaned)
+                    else:
+                        found_tests.extend(extract_tests_from_json(item))
+            elif isinstance(val, (dict, list)):
+                found_tests.extend(extract_tests_from_json(val))
+                
+    elif isinstance(data, str):
+        cleaned = clean_and_validate_test_name(data)
+        if cleaned:
+            found_tests.append(cleaned)
+            
+    return found_tests
+
+
+print("=== STARTING AGGREGATION SCAN ===")
+
+all_files = []
+for root, dirs, files in os.walk("artifacts"):
+    for file in files:
+        full_path = os.path.join(root, file)
+        all_files.append(full_path)
+
+print(f"Total files found across downloaded artifacts: {len(all_files)}")
+
 artifact_dirs = glob.glob("artifacts/*")
 
 for art_dir in artifact_dirs:
-    meta_path = os.path.join(art_dir, "run_metadata.json")
-    if not os.path.exists(meta_path):
+    print(f"\nProcessing Artifact Directory: {art_dir}")
+    
+    # 1. Load run metadata
+    meta_files = [f for f in all_files if f.startswith(art_dir) and f.endswith("run_metadata.json")]
+    if not meta_files:
+        print(f"Skipping {art_dir}: No run_metadata.json found.")
+        continue
+    
+    meta_path = meta_files[0]
+    github_url = ""
+    sha = ""
+    
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+            github_url = meta.get("github_url", "")
+            sha = meta.get("sha", "")
+            print(f"  Loaded Metadata -> {github_url} @ {sha}")
+    except Exception as e:
+        print(f"Error reading metadata {meta_path}: {e}")
         continue
 
-    with open(meta_path, "r") as f:
-        meta = json.load(f)
+    # --- 2. Parse iDFlakies Results ---
+    idflakies_files = [
+        f for f in all_files 
+        if f.startswith(art_dir) and ".dtfixingtools" in f and not any(
+            f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class"]
+        )
+    ]
 
-    github_url = meta.get("github_url", "")
-    sha = meta.get("sha", "")
-
-    # --- 1. Parse iDFlakies Results ---
-    idflakies_files = glob.glob(os.path.join(art_dir, "**", "idflakies-detection-results.json"), recursive=True)
     for res_file in idflakies_files:
         try:
-            with open(res_file, "r") as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    for entry in data:
-                        test_name = entry.get("test_name") or entry.get("name")
-                        if test_name:
-                            idflakies_rows.append([github_url, sha, "iDFlakies", test_name])
-                elif isinstance(data, dict):
-                    detected = data.get("detected_tests", []) or data.get("flakyTests", [])
-                    for test_name in detected:
-                        idflakies_rows.append([github_url, sha, "iDFlakies", str(test_name)])
+            if res_file.endswith(".json"):
+                with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
+                    data = json.load(f)
+                    detected = extract_tests_from_json(data)
+                    for t_name in detected:
+                        idflakies_rows.append([github_url, sha, t_name])
+            else:
+                # Text/Log format fallback
+                with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        cleaned = clean_and_validate_test_name(line)
+                        if cleaned:
+                            idflakies_rows.append([github_url, sha, cleaned])
         except Exception as e:
             print(f"Error reading iDFlakies file {res_file}: {e}")
 
-    # --- 2. Parse NonDex Results ---
-    nondex_files = glob.glob(os.path.join(art_dir, "**", ".nondex", "nondex-failures"), recursive=True) + \
-                   glob.glob(os.path.join(art_dir, "**", ".nondex", "failures"), recursive=True)
-    
+    # --- 3. Parse NonDex Results ---
+    nondex_files = [
+        f for f in all_files 
+        if f.startswith(art_dir) and ".nondex" in f and not any(
+            f.endswith(ext) for ext in [".xml", ".html", ".json", ".keep", ".png", ".jpg", ".class"]
+        )
+    ]
+
     for res_file in nondex_files:
         try:
-            with open(res_file, "r") as f:
+            with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
-                    test_name = line.strip()
-                    if test_name and not test_name.startswith("#"):
-                        nondex_rows.append([github_url, sha, "NonDex", test_name])
+                    cleaned = clean_and_validate_test_name(line)
+                    if cleaned:
+                        nondex_rows.append([github_url, sha, cleaned])
         except Exception as e:
             print(f"Error reading NonDex file {res_file}: {e}")
 
-# Write iDFlakies CSV
+# Deduplicate rows
+idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
+nondex_rows = [list(x) for x in set(tuple(r) for r in nondex_rows)]
+
+# Save CSV outputs
 with open(IDFLAKIES_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
     writer.writerows(idflakies_rows)
 
-# Write NonDex CSV
 with open(NONDEX_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
     writer.writerows(nondex_rows)
 
-print(f"Aggregation complete.")
-print(f" - iDFlakies flaky tests recorded: {len(idflakies_rows)} -> {IDFLAKIES_CSV}")
-print(f" - NonDex flaky tests recorded: {len(nondex_rows)} -> {NONDEX_CSV}")
+print(f"\nCompleted!")
+print(f"  Clean iDFlakies flaky tests detected: {len(idflakies_rows)}")
+print(f"  Clean NonDex flaky tests detected:    {len(nondex_rows)}")
