@@ -11,17 +11,6 @@ headers = ["Github Link", "SHA", "Flaky Test Identified"]
 idflakies_rows = []
 nondex_rows = []
 
-# Baseline and metadata files inside .dtfixingtools/ that MUST BE IGNORED
-IDFLAKIES_IGNORED_FILES = {
-    "original-order",
-    "classpath",
-    "blacklisted-tests",
-    "test-orders",
-    "pom.xml",
-    ".keep",
-    "list.txt"  # Added list.txt to prevent logging the full test manifest
-}
-
 def clean_and_validate_test_name(raw_line):
     """Validates and cleans raw lines/strings into a valid Java test identifier."""
     if not raw_line or not isinstance(raw_line, str):
@@ -64,47 +53,33 @@ def clean_and_validate_test_name(raw_line):
     return None
 
 
-def extract_tests_from_json(data):
-    """Recursively searches JSON structures for flaky test names."""
+def parse_idflakies_json(file_path):
+    """Precise parser for iDFlakies flaky-lists.json structure."""
     found_tests = []
-    
-    if isinstance(data, list):
-        for item in data:
-            found_tests.extend(extract_tests_from_json(item))
-    elif isinstance(data, dict):
-        # iDFlakies specific: check if this is the root detector results dict
-        # It maps test names to details if they are flaky
-        for key, val in data.items():
-            if isinstance(val, dict) and "flaky" in val:
-                if val.get("flaky") is True:
-                    cleaned = clean_and_validate_test_name(key)
-                    if cleaned:
-                        found_tests.append(cleaned)
-        
-        # Fallback for alternative JSON schemas
-        for key in ["test_name", "testName", "name", "test"]:
-            if key in data and isinstance(data[key], str):
-                cleaned = clean_and_validate_test_name(data[key])
-                if cleaned:
-                    found_tests.append(cleaned)
-        
-        for key, val in data.items():
-            if key in ["detected_tests", "flakyTests", "flaky_tests", "detected", "tests"] and isinstance(val, list):
-                for item in val:
-                    if isinstance(item, str):
-                        cleaned = clean_and_validate_test_name(item)
-                        if cleaned:
-                            found_tests.append(cleaned)
-                    else:
-                        found_tests.extend(extract_tests_from_json(item))
-            elif isinstance(val, (dict, list)):
-                found_tests.extend(extract_tests_from_json(val))
-                
-    elif isinstance(data, str):
-        cleaned = clean_and_validate_test_name(data)
-        if cleaned:
-            found_tests.append(cleaned)
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            data = json.load(f)
             
+            # The official flaky-lists.json structure maps sorting types to arrays of items
+            if isinstance(data, dict):
+                for strategy, test_list in data.items():
+                    if isinstance(test_list, list):
+                        for item in test_list:
+                            if isinstance(item, str):
+                                cleaned = clean_and_validate_test_name(item)
+                                if cleaned:
+                                    found_tests.append(cleaned)
+                            elif isinstance(item, dict):
+                                # Extract targeted name parameters if wrapped as objects
+                                for key in ["testName", "test_name", "name"]:
+                                    if key in item and isinstance(item[key], str):
+                                        # Only grab it if it's explicitly marked as a true flaky test failure
+                                        if item.get("flaky", True) is True:
+                                            cleaned = clean_and_validate_test_name(item[key])
+                                            if cleaned:
+                                                found_tests.append(cleaned)
+    except Exception as e:
+        print(f"Error parsing iDFlakies precision JSON {file_path}: {e}")
     return found_tests
 
 
@@ -148,46 +123,50 @@ for art_dir in artifact_dirs:
         f for f in all_files 
         if f.startswith(art_dir) 
         and ".dtfixingtools" in f 
-        and os.path.basename(f) not in IDFLAKIES_IGNORED_FILES
-        and not any(f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class"])
+        and os.path.basename(f) != "list.txt"  # Drop any raw tracking manifests completely
+        and not any(f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class", ".xml"])
     ]
 
     for res_file in idflakies_files:
-        try:
-            if res_file.endswith(".json"):
+        base_name = os.path.basename(res_file)
+        
+        # Target the absolute flaky results configuration mapping file
+        if base_name == "flaky-lists.json":
+            detected = parse_idflakies_json(res_file)
+            for t_name in detected:
+                idflakies_rows.append([github_url, sha, t_name])
+                
+        # Target explicit text-based failure reports generated by the plugin
+        elif base_name in ["failing-tests", "failing"]:
+            try:
                 with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
-                    data = json.load(f)
-                    detected = extract_tests_from_json(data)
-                    for t_name in detected:
-                        idflakies_rows.append([github_url, sha, t_name])
-            else:
-                # ONLY parse text files if they are explicitly named 'failing-tests' or contain 'flaky'
-                # to completely avoid reading manifest text files like original-order/list.txt
-                base_name = os.path.basename(res_file)
-                if "failing" in base_name or "flaky" in base_name:
-                    with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
-                        for line in f:
-                            cleaned = clean_and_validate_test_name(line)
-                            if cleaned:
-                                idflakies_rows.append([github_url, sha, cleaned])
-        except Exception as e:
-            print(f"Error reading iDFlakies file {res_file}: {e}")
+                    for line in f:
+                        cleaned = clean_and_validate_test_name(line)
+                        if cleaned:
+                            idflakies_rows.append([github_url, sha, cleaned])
+            except Exception as e:
+                print(f"Error reading iDFlakies file {res_file}: {e}")
 
-    # --- 3. Extract Test Names directly from failing-test-output paths/directories ---
-    # Only parse if iDFlakies actually caught a failing variation round
-    failing_output_paths = [
+    # --- 3. Extract Test Names directly from true failing-test-output files ---
+    # FIXED: We parse inner text contents of surefire XML logs inside failing-test-output 
+    # ONLY if they explicitly contain a <failure> or <error> tag to avoid capturing passing manifests.
+    failing_output_files = [
         f for f in all_files 
-        if f.startswith(art_dir) and "failing-test-output" in f
+        if f.startswith(art_dir) and "failing-test-output" in f and f.endswith(".xml")
     ]
-    for out_path in failing_output_paths:
-        path_parts = out_path.replace("\\", "/").split("/")
-        for part in path_parts:
-            if part.startswith("TEST-"):
-                part = part.replace("TEST-", "").replace(".xml", "").replace(".txt", "")
-            
-            cleaned = clean_and_validate_test_name(part)
-            if cleaned:
-                idflakies_rows.append([github_url, sha, cleaned])
+    for xml_file in failing_output_files:
+        try:
+            with open(xml_file, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                # Only pull the test names out if the execution report details an active failure state
+                if "<failure" in content or "<error" in content:
+                    base_name = os.path.basename(xml_file)
+                    class_name = base_name.replace("TEST-", "").replace(".xml", "")
+                    cleaned = clean_and_validate_test_name(class_name)
+                    if cleaned:
+                        idflakies_rows.append([github_url, sha, cleaned])
+        except Exception as e:
+            print(f"Error reading xml output verification step {xml_file}: {e}")
 
     # --- 4. Parse NonDex Results ---
     nondex_files = [
@@ -207,11 +186,11 @@ for art_dir in artifact_dirs:
         except Exception as e:
             print(f"Error reading NonDex file {res_file}: {e}")
 
-# Deduplicate rows
+# Deduplicate rows completely
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
 nondex_rows = [list(x) for x in set(tuple(r) for r in nondex_rows)]
 
-# Save CSV outputs
+# Save clean CSV outputs
 with open(IDFLAKIES_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
