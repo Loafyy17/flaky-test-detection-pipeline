@@ -2,12 +2,12 @@
 ###### By: Your favorite loaf, Loafyy
 
 ## 📌 Overview
-This repository provides an automated, scalable GitHub Actions pipeline designed to detect flaky tests across **Maven-based Java projects** in the IDoFT dataset (`pr-data.csv`).
+This repository provides an automated, scalable GitHub Actions pipeline designed to detect flaky tests across **Maven-based Java 8 projects** in the IDoFT dataset (`pr-data.csv`).
 It runs two detection tools: **iDFlakies** and **NonDex** via standalone CLI commands without modifying the `pom.xml` or other features of the projects.
 After each run, results are parsed and aggregated into a clean pair of csv files: one for iDFlakies, the other for NonDex.
 
 ### ⚠️ DISCLAIMER
-As this is an automated process, there is a chance that some tests are missed. That being said, most should be recorded properly. Best of luck detectors, and I hope this kit finds you well!
+As this is an automated process, tests *will* be missed due to version mismatches, missing/undetected `pom.xml`, or other factors.
 
 ---
 
@@ -17,9 +17,8 @@ As this is an automated process, there is a chance that some tests are missed. T
    * A pre-processing Python script (`generate_matrix.py`) reads `pr-data.csv` and builds a parallel GitHub Actions matrix.
    * Supports pagination (`max_projects` and `offset` inputs) to easily process specific batches or chunks of the dataset.
 
-2. **Dual-JDK Fallback Execution (`setup-java` 8 & 17):**
+2. **Dual-JDK Fallback Execution (`setup-java` 8 ONLY):**
    * Projects are compiled and tested using **Java 8** first to preserve compatibility with legacy codebases.
-   * If a modern Java 17 sub-module is encountered (e.g., `invalid target release: 17`), the pipeline automatically falls back to **Java 17** execution without failing the workflow.
 
 3. **Flaky Test Tooling Execution:**
    * **iDFlakies (`idflakies-maven-plugin:2.0.0`):** Shuffles test class and method execution orders (`random-class-method`) to uncover Order-Dependent (OD) test flakiness.
@@ -39,9 +38,9 @@ The workflow outputs two aggregated CSV artifacts:
 
 Each CSV strictly adheres to the following 3-column format:
 
-| Github Link | SHA | Flaky Test Identified |
+| project_name | sha | flaky_test |
 | :--- | :--- | :--- |
-| `https://github.com/user/repo` | `1764748eedb2f320a0d1c43cb4f928c4ccb1f2f5` | `com.example.pkg.MyTest.testMethod` |
+| `repo` | `1764748eedb2f320a0d1c43cb4f928c4ccb1f2f5` | `com.example.pkg.MyTest.testMethod` |
 
 ---
 
@@ -76,4 +75,5 @@ The number of tests you can run concurrently may be limited! As such there is an
 The artifacts from this automated pipeline will appear after the workflow is complete.  
 The artifacts we are looking for are `idflakies_summary_csv` and `nondex_summary_csv`.
 
-<img width="2062" height="548" alt="image" src="https://github.com/user-attachments/assets/dd4cfa2c-91f6-4cd1-9a40-6495d4ae8d8b" />
+<img width="2002" height="458" alt="image" src="https://github.com/user-attachments/assets/7755b4e3-4732-4a8b-af5f-04268f80e279" />
+
