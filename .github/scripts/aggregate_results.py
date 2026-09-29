@@ -18,7 +18,8 @@ IDFLAKIES_IGNORED_FILES = {
     "blacklisted-tests",
     "test-orders",
     "pom.xml",
-    ".keep"
+    ".keep",
+    "list.txt"  # Added list.txt to prevent logging the full test manifest
 }
 
 def clean_and_validate_test_name(raw_line):
@@ -71,6 +72,16 @@ def extract_tests_from_json(data):
         for item in data:
             found_tests.extend(extract_tests_from_json(item))
     elif isinstance(data, dict):
+        # iDFlakies specific: check if this is the root detector results dict
+        # It maps test names to details if they are flaky
+        for key, val in data.items():
+            if isinstance(val, dict) and "flaky" in val:
+                if val.get("flaky") is True:
+                    cleaned = clean_and_validate_test_name(key)
+                    if cleaned:
+                        found_tests.append(cleaned)
+        
+        # Fallback for alternative JSON schemas
         for key in ["test_name", "testName", "name", "test"]:
             if key in data and isinstance(data[key], str):
                 cleaned = clean_and_validate_test_name(data[key])
@@ -150,16 +161,20 @@ for art_dir in artifact_dirs:
                     for t_name in detected:
                         idflakies_rows.append([github_url, sha, t_name])
             else:
-                # Reads list.txt, failing-tests, or text log outputs
-                with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        cleaned = clean_and_validate_test_name(line)
-                        if cleaned:
-                            idflakies_rows.append([github_url, sha, cleaned])
+                # ONLY parse text files if they are explicitly named 'failing-tests' or contain 'flaky'
+                # to completely avoid reading manifest text files like original-order/list.txt
+                base_name = os.path.basename(res_file)
+                if "failing" in base_name or "flaky" in base_name:
+                    with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            cleaned = clean_and_validate_test_name(line)
+                            if cleaned:
+                                idflakies_rows.append([github_url, sha, cleaned])
         except Exception as e:
             print(f"Error reading iDFlakies file {res_file}: {e}")
 
     # --- 3. Extract Test Names directly from failing-test-output paths/directories ---
+    # Only parse if iDFlakies actually caught a failing variation round
     failing_output_paths = [
         f for f in all_files 
         if f.startswith(art_dir) and "failing-test-output" in f
@@ -167,7 +182,6 @@ for art_dir in artifact_dirs:
     for out_path in failing_output_paths:
         path_parts = out_path.replace("\\", "/").split("/")
         for part in path_parts:
-            # Strip Surefire prefixes or extensions if present (e.g., TEST-com.example.FooTest.xml)
             if part.startswith("TEST-"):
                 part = part.replace("TEST-", "").replace(".xml", "").replace(".txt", "")
             
