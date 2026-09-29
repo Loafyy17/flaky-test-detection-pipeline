@@ -11,6 +11,10 @@ on:
         description: 'Starting row index in pr-data.csv (0-based)'
         required: false
         default: '0'
+      max_job_timeout:
+        description: 'Maximum time limit per detection job in minutes (e.g., 15, 30)'
+        required: false
+        default: '20'
 
 jobs:
   prepare:
@@ -41,6 +45,7 @@ jobs:
     name: ${{ matrix.repo_name }} (${{ matrix.sha }})
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.max_job_timeout != '' && fromJson(inputs.max_job_timeout) || 20 }}
     strategy:
       fail-fast: false
       max-parallel: 10
@@ -53,13 +58,12 @@ jobs:
           repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
-      - name: Set up Java 8 and 17
+      - name: Set up Java 8
         uses: actions/setup-java@v4
         with:
           distribution: 'corretto'
           java-version: |
             8
-            17
 
       - name: Save Run Metadata & Pre-create Output Directories
         run: |
@@ -77,56 +81,76 @@ jobs:
           }
           EOF
 
-          cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
+          if [ "${{ matrix.module_path }}" != "." ]; then
+            cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
+          fi
 
-      - name: Run iDFlakies Detection (Auto Fallback JDK 8 -> 17)
+      - name: Run iDFlakies Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
           
-          # Attempt compilation with JDK 8 first; fallback to JDK 17 on error
-          JAVA_HOME=$JAVA_HOME_8_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || \
-          JAVA_HOME=$JAVA_HOME_17_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          # Force the environment strictly to Java 8
+          export JAVA_HOME=$JAVA_HOME_8_X64
+          export PATH=$JAVA_HOME/bin:$PATH
+          unset MAVEN_OPTS
           
-          # Execute iDFlakies with matching JDK
-          JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
-            -B \
-            -Ddetector.detector_type=random-class-method \
-            -Ddt.randomize.rounds=10 \
-            -Ddt.detector.original_order.all_must_pass=false \
-            -Dmaven.test.failure.ignore=true \
-            -Dcheckstyle.skip=true \
-            -Drat.skip=true \
-            -Dmaven.javadoc.skip=true || \
-          JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
-            -B \
-            -Ddetector.detector_type=random-class-method \
-            -Ddt.randomize.rounds=10 \
-            -Ddt.detector.original_order.all_must_pass=false \
-            -Dmaven.test.failure.ignore=true \
-            -Dcheckstyle.skip=true \
-            -Drat.skip=true \
-            -Dmaven.javadoc.skip=true || true
+          # Verify active runtime versions
+          echo "=== VERIFYING IDFLAKIES JVM RUNTIME ==="
+          java -version
+          mvn -version
+          echo "======================================="
 
-      - name: Run NonDex Detection (Auto Fallback JDK 8 -> 17)
+          # Quietly compile test classes under Java 8
+          mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          
+          JOB_TIMEOUT=${{ inputs.max_job_timeout != '' && inputs.max_job_timeout || 20 }}
+          IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
+
+          echo "Running iDFlakies under strict Java 8 environment..."
+
+          timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+            -B \
+            -Dstyle.color=always \
+            -Ddetector.detector_type=random-class-method \
+            -Ddt.randomize.rounds=10 \
+            -Ddt.detector.original_order.all_must_pass=false \
+            -Ddt.detector.original_order.retry_count=3 \
+            -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
+            -Dcheckstyle.skip=true \
+            -Drat.skip=true \
+            -Dmaven.javadoc.skip=true
+
+      - name: Run NonDex Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
           
-          # Attempt NonDex execution with JDK 8 first; fallback to JDK 17
-          JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
-            -q -B \
-            -Dmaven.test.failure.ignore=true \
-            -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
-            -Dcheckstyle.skip=true \
-            -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || \
-          JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
-            -q -B \
-            -Dmaven.test.failure.ignore=true \
-            -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
-            -Dcheckstyle.skip=true \
-            -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || true
+          # Force the environment strictly to Java 8
+          export JAVA_HOME=$JAVA_HOME_8_X64
+          export PATH=$JAVA_HOME/bin:$PATH
+          unset MAVEN_OPTS
+          
+          echo "=== VERIFYING NONDEX JVM RUNTIME ==="
+          java -version
+          echo "===================================="
 
+          echo "Running NonDex under strict Java 8 environment..."
+
+          mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
+            -B \
+            -DnondexRuns=10 \
+            -DnondexMode=FULL \
+            -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
+            -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
+            -Dcheckstyle.skip=true \
+            -Drat.skip=true \
+            -Dmaven.javadoc.skip=true
+
+
+          
       - name: Archive Job Results
         uses: actions/upload-artifact@v4
         if: always()
@@ -136,6 +160,7 @@ jobs:
             **/run_metadata.json
             **/.dtfixingtools/**
             **/.nondex/**
+            **/failing-test-output*/**
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

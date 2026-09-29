@@ -2,17 +2,18 @@ import os
 import glob
 import json
 import csv
-import re
 
 IDFLAKIES_CSV = "idflakies_summary.csv"
 NONDEX_CSV = "nondex_summary.csv"
 
-headers = ["Github Link", "SHA", "Flaky Test Identified"]
+# CHANGED: Replaced headers with those proposed in slack
+headers = ["project_name", "sha", "flaky_tests"]
 
 idflakies_rows = []
 nondex_rows = []
 
 def clean_and_validate_test_name(raw_line):
+    """Validates and cleans raw lines/strings into a valid Java test identifier."""
     if not raw_line or not isinstance(raw_line, str):
         return None
     
@@ -26,8 +27,12 @@ def clean_and_validate_test_name(raw_line):
         line.startswith("[") or 
         line.startswith("at ") or 
         line.startswith("INFO") or 
+        line.startswith("WARN") or 
+        line.startswith("ERROR") or 
         line.startswith("Tests run:") or 
-        line.startswith("Test set:")
+        line.startswith("Test set:") or
+        "InaccessibleObjectException" in line or
+        "LogFactory" in line
     ):
         return None
     
@@ -49,39 +54,30 @@ def clean_and_validate_test_name(raw_line):
     return None
 
 
-def extract_tests_from_json(data):
-    """Recursively search any JSON object/list for test names."""
+def parse_idflakies_json(file_path):
+    """Precise parser for iDFlakies flaky-lists.json structure."""
     found_tests = []
-    
-    if isinstance(data, list):
-        for item in data:
-            found_tests.extend(extract_tests_from_json(item))
-    elif isinstance(data, dict):
-        # Look for direct test name keys
-        for key in ["test_name", "testName", "name", "test"]:
-            if key in data and isinstance(data[key], str):
-                cleaned = clean_and_validate_test_name(data[key])
-                if cleaned:
-                    found_tests.append(cleaned)
-        
-        # Look for list properties containing flaky tests
-        for key, val in data.items():
-            if key in ["detected_tests", "flakyTests", "flaky_tests", "detected", "tests"] and isinstance(val, list):
-                for item in val:
-                    if isinstance(item, str):
-                        cleaned = clean_and_validate_test_name(item)
-                        if cleaned:
-                            found_tests.append(cleaned)
-                    else:
-                        found_tests.extend(extract_tests_from_json(item))
-            elif isinstance(val, (dict, list)):
-                found_tests.extend(extract_tests_from_json(val))
-                
-    elif isinstance(data, str):
-        cleaned = clean_and_validate_test_name(data)
-        if cleaned:
-            found_tests.append(cleaned)
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            data = json.load(f)
             
+            if isinstance(data, dict):
+                for strategy, test_list in data.items():
+                    if isinstance(test_list, list):
+                        for item in test_list:
+                            if isinstance(item, str):
+                                cleaned = clean_and_validate_test_name(item)
+                                if cleaned:
+                                    found_tests.append(cleaned)
+                            elif isinstance(item, dict):
+                                for key in ["testName", "test_name", "name"]:
+                                    if key in item and isinstance(item[key], str):
+                                        if item.get("flaky", True) is True:
+                                            cleaned = clean_and_validate_test_name(item[key])
+                                            if cleaned:
+                                                found_tests.append(cleaned)
+    except Exception as e:
+        print(f"Error parsing iDFlakies precision JSON {file_path}: {e}")
     return found_tests
 
 
@@ -120,33 +116,58 @@ for art_dir in artifact_dirs:
         print(f"Error reading metadata {meta_path}: {e}")
         continue
 
+    # CHANGED: Dynamically extract clean repo name from Github URL
+    repo_name_clean = github_url.rstrip("/").split("/")[-1].replace(".git", "")
+
     # --- 2. Parse iDFlakies Results ---
     idflakies_files = [
         f for f in all_files 
-        if f.startswith(art_dir) and ".dtfixingtools" in f and not any(
-            f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class"]
-        )
+        if f.startswith(art_dir) 
+        and ".dtfixingtools" in f 
+        and os.path.basename(f) != "list.txt"
+        and not any(f.endswith(ext) for ext in [".html", ".keep", ".png", ".jpg", ".class", ".xml"])
     ]
 
     for res_file in idflakies_files:
-        try:
-            if res_file.endswith(".json"):
-                with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
-                    data = json.load(f)
-                    detected = extract_tests_from_json(data)
-                    for t_name in detected:
-                        idflakies_rows.append([github_url, sha, t_name])
-            else:
-                # Text/Log format fallback
+        base_name = os.path.basename(res_file)
+        
+        if base_name == "flaky-lists.json":
+            detected = parse_idflakies_json(res_file)
+            for t_name in detected:
+                # CHANGED: Using repo_name_clean instead of github_url
+                idflakies_rows.append([repo_name_clean, sha, t_name])
+                
+        elif base_name in ["failing-tests", "failing"]:
+            try:
                 with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
                         cleaned = clean_and_validate_test_name(line)
                         if cleaned:
-                            idflakies_rows.append([github_url, sha, cleaned])
-        except Exception as e:
-            print(f"Error reading iDFlakies file {res_file}: {e}")
+                            # CHANGED: Using repo_name_clean instead of github_url
+                            idflakies_rows.append([repo_name_clean, sha, cleaned])
+            except Exception as e:
+                print(f"Error reading iDFlakies file {res_file}: {e}")
 
-    # --- 3. Parse NonDex Results ---
+    # --- 3. Extract Test Names directly from true failing-test-output files ---
+    failing_output_files = [
+        f for f in all_files 
+        if f.startswith(art_dir) and "failing-test-output" in f and f.endswith(".xml")
+    ]
+    for xml_file in failing_output_files:
+        try:
+            with open(xml_file, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                if "<failure" in content or "<error" in content:
+                    base_name = os.path.basename(xml_file)
+                    class_name = base_name.replace("TEST-", "").replace(".xml", "")
+                    cleaned = clean_and_validate_test_name(class_name)
+                    if cleaned:
+                        # CHANGED: Using repo_name_clean instead of github_url
+                        idflakies_rows.append([repo_name_clean, sha, cleaned])
+        except Exception as e:
+            print(f"Error reading xml output verification step {xml_file}: {e}")
+
+    # --- 4. Parse NonDex Results ---
     nondex_files = [
         f for f in all_files 
         if f.startswith(art_dir) and ".nondex" in f and not any(
@@ -160,15 +181,16 @@ for art_dir in artifact_dirs:
                 for line in f:
                     cleaned = clean_and_validate_test_name(line)
                     if cleaned:
-                        nondex_rows.append([github_url, sha, cleaned])
+                        # CHANGED: Using repo_name_clean instead of github_url
+                        nondex_rows.append([repo_name_clean, sha, cleaned])
         except Exception as e:
             print(f"Error reading NonDex file {res_file}: {e}")
 
-# Deduplicate rows
+# Deduplicate rows completely
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
 nondex_rows = [list(x) for x in set(tuple(r) for r in nondex_rows)]
 
-# Save CSV outputs
+# Save clean CSV outputs
 with open(IDFLAKIES_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
