@@ -58,13 +58,12 @@ jobs:
           repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
-      - name: Set up Java 8 and 17
+      - name: Set up Java 8
         uses: actions/setup-java@v4
         with:
           distribution: 'corretto'
           java-version: |
             8
-            17
 
       - name: Save Run Metadata & Pre-create Output Directories
         run: |
