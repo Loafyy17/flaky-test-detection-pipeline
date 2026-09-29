@@ -2,8 +2,8 @@ import pandas as pd
 import json
 import os
 
-# Your exact, unchanged repository tracking sheet URL
-url = "https://raw.githubusercontent.com/TestingResearchIllinois/idoft/main/pr-data.csv"
+# Your exact repository tracking sheet URL
+url = "https://githubusercontent.com"
 df = pd.read_csv(url)
 
 # Clean whitespaces from column names
@@ -29,7 +29,9 @@ else:
 matrix_include = []
 for _, row in deduped.iterrows():
     repo_url = str(row['Project URL']).strip()
-    repo_slug = repo_url.replace("https://github.com", "").rstrip("/").replace(".git", "")
+    
+    # FIX: Use .strip("/") to completely wipe out any accidental leading/trailing slashes
+    repo_slug = repo_url.replace("https://github.com", "").replace(".git", "").strip("/")
     repo_name = repo_slug.split("/")[-1]
     
     matrix_include.append({
