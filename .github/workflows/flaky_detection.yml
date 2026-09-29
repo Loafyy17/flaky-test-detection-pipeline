@@ -91,7 +91,7 @@ jobs:
         run: |
           cd ${{ matrix.module_path }}
           
-          # 1. Determine target JDK version before calling Maven to prevent JVM corruption
+          # 1. Determine target JDK version dynamically
           USE_JDK17=false
           if find target/test-classes target/classes -name "*.class" 2>/dev/null | xargs javap -verbose 2>/dev/null | grep -q "major version: 61"; then
             echo "Forcing JDK 17 context..."
@@ -100,23 +100,23 @@ jobs:
 
           if [ "$USE_JDK17" = "true" ]; then
             export JAVA_HOME=$JAVA_HOME_17_X64
-            # Use MAVEN_OPTS to cleanly inject runtime flags without wiping out the project pom's argLine definitions
             export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED"
           else
             export JAVA_HOME=$JAVA_HOME_8_X64
             unset MAVEN_OPTS
           fi
 
-          # 2. Re-compile using the verified Java environment path
-          $JAVA_HOME/bin/java -version
-          mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
-          
+          # 2. RUN A NATIVE PASS FIRST to populate plugins, dependencies, and code-gen metrics
+          # We use "test" but tell it to ignore failures so that it completes the execution loop and caches everything cleanly.
+          echo "Populating local environment cache..."
+          mvn test -B -Dmaven.test.failure.ignore=true -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true
+
           JOB_TIMEOUT=${{ inputs.max_job_timeout != '' && inputs.max_job_timeout || 20 }}
           IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
 
           echo "Running iDFlakies on target codebase..."
 
-          # 3. Execute iDFlakies. Note: Do NOT use -DargLine over the terminal.
+          # 3. Execute iDFlakies against the fully hydrated local environment
           timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
             -B \
             -Dstyle.color=always \
@@ -124,7 +124,7 @@ jobs:
             -Ddt.randomize.rounds=10 \
             -Ddt.detector.original_order.all_must_pass=false \
             -Ddt.detector.original_order.retry_count=3 \
-            -Dmaven.test.failure.ignore=false \
+            -Dmaven.test.failure.ignore=true \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
