@@ -3,7 +3,7 @@ import json
 import os
 
 # Your exact repository tracking sheet URL
-url = "https://githubusercontent.com"
+url = "https://raw.githubusercontent.com/TestingResearchIllinois/idoft/main/pr-data.csv"
 df = pd.read_csv(url)
 
 # Clean whitespaces from column names
