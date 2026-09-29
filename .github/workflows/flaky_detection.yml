@@ -85,7 +85,7 @@ jobs:
             cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
           fi
 
-      - name: Run iDFlakies Detection (Pure Java 8 Isolation Test)
+      - name: Run iDFlakies Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
@@ -122,7 +122,7 @@ jobs:
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true
 
-      - name: Run NonDex Detection (Pure Java 8 Isolation Test)
+      - name: Run NonDex Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
