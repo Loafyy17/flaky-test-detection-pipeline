@@ -91,42 +91,45 @@ jobs:
         run: |
           cd ${{ matrix.module_path }}
           
-          # Pre-compile test classes quietly
-          JAVA_HOME=$JAVA_HOME_8_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || \
-          JAVA_HOME=$JAVA_HOME_17_X64 mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          # 1. Determine target JDK version before calling Maven to prevent JVM corruption
+          USE_JDK17=false
+          if find target/test-classes target/classes -name "*.class" 2>/dev/null | xargs javap -verbose 2>/dev/null | grep -q "major version: 61"; then
+            echo "Forcing JDK 17 context..."
+            USE_JDK17=true
+          fi
+
+          if [ "$USE_JDK17" = "true" ]; then
+            export JAVA_HOME=$JAVA_HOME_17_X64
+            # Use MAVEN_OPTS to cleanly inject runtime flags without wiping out the project pom's argLine definitions
+            export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED"
+          else
+            export JAVA_HOME=$JAVA_HOME_8_X64
+            unset MAVEN_OPTS
+          fi
+
+          # 2. Re-compile using the verified Java environment path
+          $JAVA_HOME/bin/java -version
+          mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
           
           JOB_TIMEOUT=${{ inputs.max_job_timeout != '' && inputs.max_job_timeout || 20 }}
           IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
 
-          echo "Running iDFlakies with maximum execution time of $IDFLAKIES_TIMEOUT..."
-          
-          # Export global JVM options so plugins can read reflections safely without overwriting the pom's argLine property
-          export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.math=ALL-UNNAMED"
+          echo "Running iDFlakies on target codebase..."
 
-          JAVA_HOME=$JAVA_HOME_8_X64 timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+          # 3. Execute iDFlakies. Note: Do NOT use -DargLine over the terminal.
+          timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
             -B \
             -Dstyle.color=always \
             -Ddetector.detector_type=random-class-method \
             -Ddt.randomize.rounds=10 \
             -Ddt.detector.original_order.all_must_pass=false \
             -Ddt.detector.original_order.retry_count=3 \
-            -Dmaven.test.failure.ignore=true \
+            -Dmaven.test.failure.ignore=false \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
             -Drat.skip=true \
-            -Dmaven.javadoc.skip=true || \
-          JAVA_HOME=$JAVA_HOME_17_X64 timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
-            -B \
-            -Dstyle.color=always \
-            -Ddetector.detector_type=random-class-method \
-            -Ddt.randomize.rounds=10 \
-            -Ddt.detector.original_order.all_must_pass=false \
-            -Ddt.detector.original_order.retry_count=3 \
-            -Dmaven.test.failure.ignore=true \
-            -DfailIfNoTests=false \
-            -Dcheckstyle.skip=true \
-            -Drat.skip=true \
-            -Dmaven.javadoc.skip=true || true
+            -Dmaven.javadoc.skip=true
+
 
       - name: Run NonDex Detection (Auto Fallback JDK 8 -> 17)
         continue-on-error: true
