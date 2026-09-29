@@ -6,8 +6,8 @@ import csv
 IDFLAKIES_CSV = "idflakies_summary.csv"
 NONDEX_CSV = "nondex_summary.csv"
 
-# CHANGED: Replaced "Github Link" with "Repository Name"
-headers = ["Repository Name", "SHA", "Flaky Test Identified"]
+# CHANGED: Replaced headers with those proposed in slack
+headers = ["project_name", "sha", "flaky_tests"]
 
 idflakies_rows = []
 nondex_rows = []
