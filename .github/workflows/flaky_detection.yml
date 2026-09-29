@@ -99,6 +99,9 @@ jobs:
           IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
 
           echo "Running iDFlakies with maximum execution time of $IDFLAKIES_TIMEOUT..."
+          
+          # Export global JVM options so plugins can read reflections safely without overwriting the pom's argLine property
+          export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.math=ALL-UNNAMED"
 
           JAVA_HOME=$JAVA_HOME_8_X64 timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
             -B \
@@ -107,7 +110,6 @@ jobs:
             -Ddt.randomize.rounds=10 \
             -Ddt.detector.original_order.all_must_pass=false \
             -Ddt.detector.original_order.retry_count=3 \
-            -DargLine="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED" \
             -Dmaven.test.failure.ignore=true \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
@@ -120,7 +122,6 @@ jobs:
             -Ddt.randomize.rounds=10 \
             -Ddt.detector.original_order.all_must_pass=false \
             -Ddt.detector.original_order.retry_count=3 \
-            -DargLine="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED" \
             -Dmaven.test.failure.ignore=true \
             -DfailIfNoTests=false \
             -Dcheckstyle.skip=true \
@@ -132,12 +133,15 @@ jobs:
         run: |
           cd ${{ matrix.module_path }}
           
-          # Check if target class files require Java 17 (class version >= 55/61)
+          # Check if target class files require Java 17
           USE_JDK17=false
           if find target/test-classes target/classes -name "*.class" 2>/dev/null | xargs javap -verbose 2>/dev/null | grep -q "major version: 61"; then
             echo "Detected Java 17 class bytecode (version 61.0). Forcing JDK 17 for NonDex..."
             USE_JDK17=true
           fi
+
+          # Safe runtime configurations to open internals to NonDex shuffler on modern JDK versions
+          export MAVEN_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED"
 
           if [ "$USE_JDK17" = "true" ]; then
             JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
@@ -149,7 +153,7 @@ jobs:
               -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
               -Dcheckstyle.skip=true \
               -Drat.skip=true \
-              -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || true
+              -Dmaven.javadoc.skip=true || true
           else
             JAVA_HOME=$JAVA_HOME_8_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
               -B \
@@ -160,7 +164,7 @@ jobs:
               -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
               -Dcheckstyle.skip=true \
               -Drat.skip=true \
-              -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || \
+              -Dmaven.javadoc.skip=true || \
             JAVA_HOME=$JAVA_HOME_17_X64 mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
               -B \
               -DnondexRuns=10 \
@@ -170,8 +174,9 @@ jobs:
               -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
               -Dcheckstyle.skip=true \
               -Drat.skip=true \
-              -Dmaven.javadoc.skip=true | grep -v "^\[DEBUG\]" || true
+              -Dmaven.javadoc.skip=true || true
           fi
+
           
       - name: Archive Job Results
         uses: actions/upload-artifact@v4
