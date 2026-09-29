@@ -17,14 +17,11 @@ As this is an automated process, tests *will* be missed due to version mismatche
    * A pre-processing Python script (`generate_matrix.py`) reads `pr-data.csv` and builds a parallel GitHub Actions matrix.
    * Supports pagination (`max_projects` and `offset` inputs) to easily process specific batches or chunks of the dataset.
 
-2. **Dual-JDK Fallback Execution (`setup-java` 8 ONLY):**
-   * Projects are compiled and tested using **Java 8** first to preserve compatibility with legacy codebases.
-
-3. **Flaky Test Tooling Execution:**
+2. **Flaky Test Tooling Execution:**
    * **iDFlakies (`idflakies-maven-plugin:2.0.0`):** Shuffles test class and method execution orders (`random-class-method`) to uncover Order-Dependent (OD) test flakiness.
    * **NonDex (`nondex-maven-plugin:2.2.1`):** Explores non-deterministic iteration orders in underlying Java collection APIs (e.g., `HashMap`, `HashSet`) to detect Implementation-Dependent (ID) flakiness.
 
-4. **Recursive Parsing & Artifact Aggregation:**
+3. **Recursive Parsing & Artifact Aggregation:**
    * Downstream jobs automatically collect generated artifacts, including hidden dot-directories (`.dtfixingtools`, `.nondex`).
    * A sanitizing script (`aggregate_results.py`) recursively searches detection logs, filters out stack traces and build log noise using strict Java identifier regex, and writes clean results.
 
