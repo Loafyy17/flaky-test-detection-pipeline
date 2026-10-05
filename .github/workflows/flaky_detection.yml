@@ -59,13 +59,15 @@ jobs:
           ref: ${{ matrix.sha }}
 
       # 1. CHANGED: Dynamically detect Java version from the repository's pom.xml
+            # Dynamically detect Java version using an absolute system filepath
       - name: Set up Java Environment
         id: setup-java
         uses: actions/setup-java@v4
         with:
           distribution: 'corretto'
-          java-version-file: '${{ matrix.module_path }}/pom.xml'
-          # Fallback to Java 8 if parsing fails or version isn't specified
+          # Force an absolute workspace path to prevent parsing engine errors
+          java-version-file: '${{ github.workspace }}/${{ matrix.module_path }}/pom.xml'
+          # Safe baseline fallback if parsing fails
           java-version: '8' 
 
       - name: Save Run Metadata & Pre-create Output Directories
