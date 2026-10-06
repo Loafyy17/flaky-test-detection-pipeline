@@ -5,12 +5,14 @@ import csv
 
 IDFLAKIES_CSV = "idflakies_summary.csv"
 NONDEX_CSV = "nondex_summary.csv"
+FLAKESYNC_CSV = "flakesync_td_tests.csv"
 
 # CHANGED: Replaced headers with those proposed in slack
 headers = ["project_name", "sha", "flaky_tests"]
 
 idflakies_rows = []
 nondex_rows = []
+flakesync_rows = []
 
 def clean_and_validate_test_name(raw_line):
     """Validates and cleans raw lines/strings into a valid Java test identifier."""
@@ -97,11 +99,14 @@ for art_dir in artifact_dirs:
     print(f"\nProcessing Artifact Directory: {art_dir}")
     
     # 1. Load run metadata
+    # FIXED: Ensure we pick the root metadata file to protect against nested module paths from the combined upload
     meta_files = [f for f in all_files if f.startswith(art_dir) and f.endswith("run_metadata.json")]
     if not meta_files:
         print(f"Skipping {art_dir}: No run_metadata.json found.")
         continue
     
+    # Sort paths by length to ensure the top-level directory file comes first
+    meta_files.sort(key=len)
     meta_path = meta_files[0]
     github_url = ""
     sha = ""
@@ -116,7 +121,6 @@ for art_dir in artifact_dirs:
         print(f"Error reading metadata {meta_path}: {e}")
         continue
 
-    # CHANGED: Dynamically extract clean repo name from Github URL
     repo_name_clean = github_url.rstrip("/").split("/")[-1].replace(".git", "")
 
     # --- 2. Parse iDFlakies Results ---
@@ -134,7 +138,6 @@ for art_dir in artifact_dirs:
         if base_name == "flaky-lists.json":
             detected = parse_idflakies_json(res_file)
             for t_name in detected:
-                # CHANGED: Using repo_name_clean instead of github_url
                 idflakies_rows.append([repo_name_clean, sha, t_name])
                 
         elif base_name in ["failing-tests", "failing"]:
@@ -143,7 +146,6 @@ for art_dir in artifact_dirs:
                     for line in f:
                         cleaned = clean_and_validate_test_name(line)
                         if cleaned:
-                            # CHANGED: Using repo_name_clean instead of github_url
                             idflakies_rows.append([repo_name_clean, sha, cleaned])
             except Exception as e:
                 print(f"Error reading iDFlakies file {res_file}: {e}")
@@ -162,7 +164,6 @@ for art_dir in artifact_dirs:
                     class_name = base_name.replace("TEST-", "").replace(".xml", "")
                     cleaned = clean_and_validate_test_name(class_name)
                     if cleaned:
-                        # CHANGED: Using repo_name_clean instead of github_url
                         idflakies_rows.append([repo_name_clean, sha, cleaned])
         except Exception as e:
             print(f"Error reading xml output verification step {xml_file}: {e}")
@@ -174,18 +175,35 @@ for art_dir in artifact_dirs:
             f.endswith(ext) for ext in [".xml", ".html", ".json", ".keep", ".png", ".jpg", ".class"]
         )
     ]
-
-    for res_file in nondex_files:
+    for nd_file in nondex_files:
         try:
-            with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
+            with open(nd_file, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     cleaned = clean_and_validate_test_name(line)
                     if cleaned:
-                        # CHANGED: Using repo_name_clean instead of github_url
                         nondex_rows.append([repo_name_clean, sha, cleaned])
         except Exception as e:
-            print(f"Error reading NonDex file {res_file}: {e}")
+            print(f"Error reading NonDex file {nd_file}: {e}")
 
+    # --- 5. Parse FlakeSync Results ---
+    flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("ResultMethods.txt")]
+    
+    for rm_file in flakesync_files:
+        loc_count = 0 
+        try:
+            # FIXED: Added .rstrip(".") to remove lingering dots from package names
+            base_name = os.path.basename(rm_file).replace("ResultMethods.txt", "").rstrip(".")
+                
+            loc_file = rm_file.replace("ResultMethods.txt", "Locations.txt")
+            if os.path.exists(loc_file):
+                with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
+                    loc_count = sum(1 for line in f if line.strip())
+                
+            flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
+        except Exception as e:
+            print(f"Error reading FlakeSync file {rm_file}: {e}")
+
+                
 # Deduplicate rows completely
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
 nondex_rows = [list(x) for x in set(tuple(r) for r in nondex_rows)]
@@ -200,6 +218,14 @@ with open(NONDEX_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
     writer.writerows(nondex_rows)
+
+# Save FlakeSync CSV output
+with open(FLAKESYNC_CSV, "w", newline="", encoding="utf-8") as f:
+    writer = csv.writer(f)
+    writer.writerow(["project_name", "sha", "test_name", "locations_found"])
+    writer.writerows(flakesync_rows)
+
+print(f"  Clean FlakeSync TD tests detected: {len(flakesync_rows)}")
 
 print(f"\nCompleted!")
 print(f"  Clean iDFlakies flaky tests detected: {len(idflakies_rows)}")
