@@ -1,10 +1,11 @@
-# Automated Flaky Test Detection Pipeline for iDFlakies and NonDex
-###### By: Your favorite loaf, Loafyy
+# Automated Flaky Test Detection Pipeline for iDFlakies, NonDex, and FlakeSync
+###### Originally Authored By: Your favorite loaf, Loafyy
+###### Contributors: Samuel Song
 
 ## 📌 Overview
 This repository provides an automated, scalable GitHub Actions pipeline designed to detect flaky tests across **Maven-based Java 8 projects** in the IDoFT dataset (`pr-data.csv`).
-It runs **10 rounds each** of two detection tools: **iDFlakies** and **NonDex** via standalone CLI commands without modifying the `pom.xml` or other features of the projects.
-After each run, results are parsed and aggregated into a clean pair of csv files: one for iDFlakies, the other for NonDex.
+It runs **10 rounds each** of two detection tools: **iDFlakies** and **NonDex** along with **FlakeSync** via standalone CLI commands without modifying the `pom.xml` or other features of the projects.
+After each run, results are parsed and aggregated into a clean set of csv files: one for iDFlakies, NonDex, and FlakeSync.
 
 ### ⚠️ DISCLAIMER
 As this is an automated process, tests *will* be missed due to version mismatches, missing/undetected `pom.xml`, or other factors.
@@ -20,6 +21,7 @@ As this is an automated process, tests *will* be missed due to version mismatche
 2. **Flaky Test Tooling Execution:**
    * **iDFlakies (`idflakies-maven-plugin:2.0.0`):** Shuffles test class and method execution orders (`random-class-method`) to uncover Order-Dependent (OD) test flakiness.
    * **NonDex (`nondex-maven-plugin:2.2.1`):** Explores non-deterministic iteration orders in underlying Java collection APIs (e.g., `HashMap`, `HashSet`) to detect Implementation-Dependent (ID) flakiness.
+   * **FlakeSync (`flakesync-maven-plugin:1.0-SNAPSHOT`):** Injects artificial thread delays via condition-based execution sweeps to target race conditions and identify Timing-Dependent (TD) async flakiness.
 
 3. **Recursive Parsing & Artifact Aggregation:**
    * Downstream jobs automatically collect generated artifacts, including hidden dot-directories (`.dtfixingtools`, `.nondex`).
@@ -29,15 +31,18 @@ As this is an automated process, tests *will* be missed due to version mismatche
 
 ## 📊 Summary Output Format
 
-The workflow outputs two aggregated CSV artifacts:
+The workflow outputs three aggregated CSV artifacts:
 * `idflakies_summary.csv`
 * `nondex_summary.csv`
+* `flakesync_td_tests.csv`
 
 Each CSV strictly adheres to the following 3-column format:
 
 | project_name | sha | flaky_test |
 | :--- | :--- | :--- |
 | `repo` | `1764748eedb2f320a0d1c43cb4f928c4ccb1f2f5` | `com.example.pkg.MyTest.testMethod` |
+
+*Except flaksync, which adds a location column.*
 
 ---
 
