@@ -113,22 +113,16 @@ jobs:
           </settings>
           EOF
 
-      # ==========================================================
+     # ==========================================================
       # BUILD AND INSTALL IDFLAKIES MAVEN PLUGIN LOCALLY
       # ==========================================================
       - name: Checkout iDFlakies Repository
         if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
         uses: actions/checkout@v4
         with:
-          repository: TestingResearchIllinois/idflakies
+          repository: UT-SE-Research/iDFlakies
           path: idflakies-repo
-
-      - name: Build and Install iDFlakies Plugin Locally
-        if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
-        run: |
-          cd idflakies-repo
-          mvn clean install -DskipTests -B
-
+          
       # ==========================================================
       # FORCE GLOBAL DEPENDENCY RESOLUTION PASS
       # ==========================================================
