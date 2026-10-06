@@ -45,7 +45,7 @@ jobs:
     name: ${{ matrix.repo_name }} (${{ matrix.sha }})
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.max_job_timeout != '' && fromJson(inputs.max_job_timeout) || 20 }}
+    timeout-minutes: ${{ github.event.inputs.max_job_timeout != '' && fromJson(github.event.inputs.max_job_timeout) || 20 }}
     strategy:
       fail-fast: false
       max-parallel: 10
@@ -58,7 +58,6 @@ jobs:
           repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
-      # 1. Dynamically detect Java version from the repository's pom.xml
       - name: Set up Java Environment
         id: setup-java
         uses: actions/setup-java@v4
@@ -66,6 +65,79 @@ jobs:
           distribution: 'corretto'
           java-version-file: '${{ github.workspace }}/${{ matrix.module_path }}/pom.xml'
           java-version: '8' 
+
+      # ==========================================================
+      # STRATEGY 1: CONFIGURE CLEAN OFFICIAL REPOSITORY FALLBACKS
+      # ==========================================================
+      - name: Configure Clean Global Maven Repositories
+        run: |
+          rm -rf ~/.m2
+          mkdir -p ~/.m2
+          cat <<EOF > ~/.m2/settings.xml
+          <settings xmlns="http://apache.org"
+                    xmlns:xsi="http://w3.org"
+                    xsi:schemaLocation="http://apache.org https://apache.org">
+            <mirrors>
+              <!-- Intercept hardcoded or broken apache snapshot URLs and point to proper repository server -->
+              <mirror>
+                <id>force-apache-snapshots-nexus</id>
+                <name>Corrected Apache Snapshots Core Server</name>
+                <url>https://repository.apache.org/snapshots/</url>
+                <mirrorOf>apache-snapshots,apache.snapshots,apache-snapshot</mirrorOf>
+              </mirror>
+            </mirrors>
+            <profiles>
+              <profile>
+                <id>apache-snapshots-profile</id>
+                <activation>
+                  <activeByDefault>true</activeByDefault>
+                </activation>
+                <repositories>
+                  <repository>
+                    <id>apache-snapshots</id>
+                    <url>https://repository.apache.org/snapshots/</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                    <releases><enabled>true</enabled></releases>
+                  </repository>
+                </repositories>
+                <pluginRepositories>
+                  <pluginRepository>
+                    <id>apache-plugins-snapshots</id>
+                    <url>https://repository.apache.org/snapshots/</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                    <releases><enabled>true</enabled></releases>
+                  </pluginRepository>
+                </pluginRepositories>
+              </profile>
+            </profiles>
+          </settings>
+          EOF
+
+      # ==========================================================
+      # BUILD AND INSTALL IDFLAKIES MAVEN PLUGIN LOCALLY
+      # ==========================================================
+      - name: Checkout iDFlakies Repository
+        if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
+        uses: actions/checkout@v4
+        with:
+          repository: TestingResearchIllinois/idflakies
+          path: idflakies-repo
+
+      - name: Build and Install iDFlakies Plugin Locally
+        if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
+        run: |
+          cd idflakies-repo
+          mvn clean install -DskipTests -B
+
+      # ==========================================================
+      # FORCE GLOBAL DEPENDENCY RESOLUTION PASS
+      # ==========================================================
+      - name: Force Global Dependency Resolution Pass
+        continue-on-error: true
+        run: |
+          cd ${{ matrix.module_path }}
+          mvn dependency:go-offline -B -U -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          mvn clean install -B -U -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
 
       - name: Save Run Metadata & Pre-create Output Directories
         run: |
@@ -87,40 +159,9 @@ jobs:
             cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
           fi
 
-      # 2. Run iDFlakies on Java 8
-      - name: Run iDFlakies Detection
-        if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
-        continue-on-error: true
-        run: |
-          cd ${{ matrix.module_path }}
-          unset MAVEN_OPTS
-          
-          echo "=== VERIFYING IDFLAKIES JVM RUNTIME ==="
-          java -version
-          mvn -version
-          echo "======================================="
-
-          mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
-          
-          JOB_TIMEOUT=${{ inputs.max_job_timeout != '' && inputs.max_job_timeout || 20 }}
-          IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
-
-          echo "Running iDFlakies under detected Java ${{ steps.setup-java.outputs.version }} environment..."
-
-          timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
-            -B \
-            -Dstyle.color=always \
-            -Ddetector.detector_type=random-class-method \
-            -Ddt.randomize.rounds=10 \
-            -Ddt.detector.original_order.all_must_pass=false \
-            -Ddt.detector.original_order.retry_count=3 \
-            -Dmaven.test.failure.ignore=true \
-            -DfailIfNoTests=false \
-            -Dcheckstyle.skip=true \
-            -Drat.skip=true \
-            -Dmaven.javadoc.skip=true
-
-      # 3. Run NonDex Detection
+      # ==========================================
+      # STEP 1: RUN NONDEX (Fastest, API-focused)
+      # ==========================================
       - name: Run NonDex Detection
         continue-on-error: true
         run: |
@@ -133,7 +174,7 @@ jobs:
           echo "Running NonDex under detected Java ${{ steps.setup-java.outputs.version }} environment..."
 
           mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
-            -B \
+            -B -U \
             -DnondexRuns=10 \
             -DnondexMode=FULL \
             -Dmaven.test.failure.ignore=true \
@@ -143,7 +184,9 @@ jobs:
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true
 
-      # 4. Set up & build FlakeSync (Moved up before Archiving)
+      # ==========================================
+      # STEP 2: RUN FLAKESYNC (Targeted & Linear)
+      # ==========================================
       - name: Checkout FlakeSync Repository
         uses: actions/checkout@v4
         with:
@@ -153,17 +196,12 @@ jobs:
       - name: Build FlakeSync Plugin Locally
         run: |
           cd flakesync-repo
-          export JAVA_HOME=$JAVA_HOME_8_X64
-          export PATH=$JAVA_HOME/bin:$PATH
-          mvn clean install -U -DskipTests
+          mvn clean install -U -DskipTests -B
 
-      # 5. Run FlakeSync Detection
       - name: Run FlakeSync (Concurrent Find & Delay Injection)
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          export JAVA_HOME=$JAVA_HOME_8_X64
-          export PATH=$JAVA_HOME/bin:$PATH
           
           TEST_NAMES="${{ matrix.test_names }}"
           
@@ -174,17 +212,52 @@ jobs:
               
               echo "-> Finding concurrent methods"
               mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:concurrentfind \
-                -Dflakesync.testName="$TEST_NAME" -B -Dcheckstyle.skip=true -Drat.skip=true
+                -Dflakesync.testName="$TEST_NAME" -B -U -Dcheckstyle.skip=true -Drat.skip=true
               
               echo "-> Injecting delays to locate failures"
               mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:delaylocs \
-                -Dflakesync.testName="$TEST_NAME" -B -Dcheckstyle.skip=true -Drat.skip=true
+                -Dflakesync.testName="$TEST_NAME" -B -U -Dcheckstyle.skip=true -Drat.skip=true
             done
           else
             echo "Warning: No test names provided in matrix to run FlakeSync."
           fi
 
-      # 6. Combined Archival Step (Captures iDFlakies, NonDex, and FlakeSync)
+      # ==========================================
+      # STEP 3: RUN IDFLAKIES (Moved to Back / Slowest)
+      # ==========================================
+      - name: Run iDFlakies Detection
+        if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
+        continue-on-error: true
+        run: |
+          cd ${{ matrix.module_path }}
+          unset MAVEN_OPTS
+          
+          echo "=== VERIFYING IDFLAKIES JVM RUNTIME ==="
+          java -version
+          mvn -version
+          echo "======================================="
+
+          JOB_TIMEOUT=${{ github.event.inputs.max_job_timeout != '' && github.event.inputs.max_job_timeout || 20 }}
+          IDFLAKIES_TIMEOUT=$(( JOB_TIMEOUT > 5 ? JOB_TIMEOUT - 5 : 5 ))m
+
+          echo "Running iDFlakies under detected Java ${{ steps.setup-java.outputs.version }} environment..."
+
+          timeout --foreground $IDFLAKIES_TIMEOUT mvn edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect \
+            -B -U \
+            -Dstyle.color=always \
+            -Ddetector.detector_type=random-class-method \
+            -Ddt.randomize.rounds=10 \
+            -Ddt.detector.original_order.all_must_pass=false \
+            -Ddt.detector.original_order.retry_count=3 \
+            -Dmaven.test.failure.ignore=true \
+            -DfailIfNoTests=false \
+            -Dcheckstyle.skip=true \
+            -Drat.skip=true \
+            -Dmaven.javadoc.skip=true
+
+      # ==========================================
+      # STEP 4: COMBINED UNIFIED ARCHIVAL
+      # ==========================================
       - name: Archive All Tool Results
         uses: actions/upload-artifact@v4
         if: always()
