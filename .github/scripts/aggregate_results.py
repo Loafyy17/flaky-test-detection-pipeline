@@ -178,23 +178,23 @@ for art_dir in artifact_dirs:
     ]
 # --- 5. Parse FlakeSync Results ---
         # Find unique test names using the -ResultMethods.txt files
-        flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-ResultMethods.txt")]
-        for rm_file in flakesync_files:
-            try:
-                # Extract the exact test name from the ResultMethods filename
-                base_name = os.path.basename(rm_file).replace("-ResultMethods.txt", "")
+    flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-ResultMethods.txt")]
+    for rm_file in flakesync_files:
+        try:
+            # Extract the exact test name from the ResultMethods filename
+            base_name = os.path.basename(rm_file).replace("-ResultMethods.txt", "")
                 
-                # Check for the corresponding Locations.txt file to count failure-inducing delays
-                loc_file = rm_file.replace("-ResultMethods.txt", "-Locations.txt")
-                loc_count = 0
-                if os.path.exists(loc_file):
-                    with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
-                        loc_count = sum(1 for line in f if line.strip()) # Count non-empty lines
+            # Check for the corresponding Locations.txt file to count failure-inducing delays
+            loc_file = rm_file.replace("-ResultMethods.txt", "-Locations.txt")
+            loc_count = 0
+            if os.path.exists(loc_file):
+                with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
+                    loc_count = sum(1 for line in f if line.strip()) # Count non-empty lines
                 
-                # Add to the CSV list based on the ResultMethods discovery
-                flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
-            except Exception as e:
-                print(f"Error reading FlakeSync file {rm_file}: {e}")
+            # Add to the CSV list based on the ResultMethods discovery
+            flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
+        except Exception as e:
+            print(f"Error reading FlakeSync file {rm_file}: {e}")
                 
 # Deduplicate rows completely
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
