@@ -164,7 +164,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-
+          
       - name: Checkout FlakeSync Repository
         uses: actions/checkout@v4
         with:
@@ -176,7 +176,7 @@ jobs:
           cd flakesync-repo
           export JAVA_HOME=$JAVA_HOME_8_X64
           export PATH=$JAVA_HOME/bin:$PATH
-          mvn clean install -DskipTests
+          mvn clean install -U -DskipTests
 
       - name: Run FlakeSync (Concurrent Find & Delay Injection)
         continue-on-error: true
@@ -185,57 +185,32 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_8_X64
           export PATH=$JAVA_HOME/bin:$PATH
           
-          # NOTE: FlakeSync requires a specific test name to target.
-          # Assuming your generate_matrix.py outputs the test name as 'test_name'
-          # e.g., packageName.ClassName#methodName
-          TEST_NAME=${{ matrix.test_name }}
+          # Read the comma-separated test names from the matrix script
+          TEST_NAMES="${{ matrix.test_names }}"
           
-          if [ -n "$TEST_NAME" ]; then
-            echo "=== Finding concurrent methods ==="
-            mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:concurrentfind \
-              -Dflakesync.testName="$TEST_NAME" \
-              -B -Dcheckstyle.skip=true -Drat.skip=true
+          if [ -n "$TEST_NAMES" ]; then
+            IFS=',' read -ra ADDR <<< "$TEST_NAMES"
+            for TEST_NAME in "${ADDR[@]}"; do
+              echo "=== Running FlakeSync on $TEST_NAME ==="
               
-            echo "=== Injecting delays to locate failures ==="
-            mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:delaylocs \
-              -Dflakesync.testName="$TEST_NAME" \
-              -B -Dcheckstyle.skip=true -Drat.skip=true
+              echo "-> Finding concurrent methods"
+              mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:concurrentfind \
+                -Dflakesync.testName="$TEST_NAME" -B -Dcheckstyle.skip=true -Drat.skip=true
+                
+              echo "-> Injecting delays to locate failures"
+              mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:delaylocs \
+                -Dflakesync.testName="$TEST_NAME" -B -Dcheckstyle.skip=true -Drat.skip=true
+            done
           else
-            echo "Warning: No test name provided in matrix to run FlakeSync."
+            echo "Warning: No test names provided in matrix to run FlakeSync."
           fi
 
-      - name: Generate TD Tests CSV
-        continue-on-error: true
-        run: |
-          cd ${{ matrix.module_path }}
-          CSV_FILE="td_tests.csv"
-          echo "Project,SHA,Module,Test Name,Locations Found" > $CSV_FILE
-          
-          # Search for all generated Locations.txt files in the .flakesync directories
-          find . -type f -name "*-Locations.txt" | while read loc_file; do
-            # Extract the test name from the filename
-            base_name=$(basename "$loc_file" -Locations.txt)
-            
-            # Count the number of failure-inducing delay locations
-            loc_count=$(wc -l < "$loc_file")
-            
-            # If locations > 0, injecting delays caused a failure, classifying it as a TD test
-            if [ "$loc_count" -gt 0 ]; then
-              echo "${{ matrix.repo_name }},${{ matrix.sha }},${{ matrix.module_path }},$base_name,$loc_count" >> $CSV_FILE
-            fi
-          done
-          
-          echo "Generated TD tests CSV:"
-          cat $CSV_FILE
-
-      - name: Archive FlakeSync Results & TD CSV
+      - name: Archive FlakeSync Results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: flakesync-results-${{ matrix.repo_name }}-${{ matrix.sha }}
-          path: |
-            **/.flakesync/**
-            **/td_tests.csv
+          path: **/.flakesync/**
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
