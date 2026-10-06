@@ -27,19 +27,32 @@ else:
     deduped = deduped.iloc[offset:]
 
 matrix_include = []
+test_col = 'Fully-Qualified Test Name (e.g., org.example.Class.method)'
+
 for _, row in deduped.iterrows():
     repo_url = str(row['Project URL']).strip()
-    
-    # FIX: Use .strip("/") to completely wipe out any accidental leading/trailing slashes
     repo_slug = repo_url.replace("https://github.com", "").replace(".git", "").strip("/")
     repo_name = repo_slug.split("/")[-1]
+    sha = str(row['SHA Detected']).strip()
     
+    # Get all tests for this SHA and format them with '#' for FlakeSync
+    raw_tests = df[df['SHA Detected'].astype(str).str.strip() == sha][test_col].dropna().astype(str).tolist()
+    formatted_tests = []
+    for t in raw_tests:
+        t = t.strip()
+        if '.' in t:
+            parts = t.split('.')
+            formatted_tests.append('.'.join(parts[:-1]) + '#' + parts[-1])
+        else:
+            formatted_tests.append(t)
+            
     matrix_include.append({
         "repo_url": repo_url,
         "repo_slug": repo_slug,
         "repo_name": repo_name,
-        "sha": str(row['SHA Detected']).strip(),
-        "module_path": str(row['Module Path']).strip() if pd.notna(row['Module Path']) else "."
+        "sha": sha,
+        "module_path": str(row['Module Path']).strip() if pd.notna(row['Module Path']) else ".",
+        "test_names": ",".join(formatted_tests) # Pass as comma-separated string
     })
 
 # Output the matrix string format required by your original YAML configuration
