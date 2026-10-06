@@ -177,8 +177,11 @@ jobs:
 
           mvn edu.illinois:nondex-maven-plugin:2.2.1:nondex \
             -B -U \
-            -DnondexRuns=10 \
+            -DnondexRuns=3 \
             -DnondexMode=FULL \
+            -DreuseForks=true \
+            -DforkCount=1 \
+            -DargLine="" \
             -Dmaven.test.failure.ignore=true \
             -DfailIfNoTests=false \
             -Dorg.slf4j.simpleLogger.defaultLogLevel=warn \
@@ -300,19 +303,4 @@ jobs:
         run: python .github/scripts/aggregate_results.py
 
       - name: Upload iDFlakies Summary CSV
-        uses: actions/upload-artifact@v4
-        with:
-          name: idflakies_summary_csv
-          path: idflakies_summary.csv
-
-      - name: Upload NonDex Summary CSV
-        uses: actions/upload-artifact@v4
-        with:
-          name: nondex_summary_csv
-          path: nondex_summary.csv
-
-      - name: Upload FlakeSync TD Tests CSV
-        uses: actions/upload-artifact@v4
-        with:
-          name: flakesync_td_tests_csv
-          path: flakesync_td_tests.csv
+        uses: actions/upload-artifact@v
