@@ -5,12 +5,14 @@ import csv
 
 IDFLAKIES_CSV = "idflakies_summary.csv"
 NONDEX_CSV = "nondex_summary.csv"
+FLAKESYNC_CSV = "flakesync_td_tests.csv"
 
 # CHANGED: Replaced headers with those proposed in slack
 headers = ["project_name", "sha", "flaky_tests"]
 
 idflakies_rows = []
 nondex_rows = []
+flakesync_rows = []
 
 def clean_and_validate_test_name(raw_line):
     """Validates and cleans raw lines/strings into a valid Java test identifier."""
@@ -174,7 +176,20 @@ for art_dir in artifact_dirs:
             f.endswith(ext) for ext in [".xml", ".html", ".json", ".keep", ".png", ".jpg", ".class"]
         )
     ]
-
+    # --- 5. Parse FlakeSync Results ---
+    flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-Locations.txt")]
+        for loc_file in flakesync_files:
+            try:
+                base_name = os.path.basename(loc_file).replace("-Locations.txt", "")
+                with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
+                    loc_count = sum(1 for line in f if line.strip()) # Count non-empty lines
+                
+                # If locations > 0, injecting delays caused a failure (TD Test)
+                if loc_count > 0:
+                    flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
+            except Exception as e:
+                print(f"Error reading FlakeSync file {loc_file}: {e}")
+                
     for res_file in nondex_files:
         try:
             with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -200,6 +215,14 @@ with open(NONDEX_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
     writer.writerows(nondex_rows)
+
+# Save FlakeSync CSV output
+with open(FLAKESYNC_CSV, "w", newline="", encoding="utf-8") as f:
+    writer = csv.writer(f)
+    writer.writerow(["project_name", "sha", "test_name", "locations_found"])
+    writer.writerows(flakesync_rows)
+
+print(f"  Clean FlakeSync TD tests detected: {len(flakesync_rows)}")
 
 print(f"\nCompleted!")
 print(f"  Clean iDFlakies flaky tests detected: {len(idflakies_rows)}")
