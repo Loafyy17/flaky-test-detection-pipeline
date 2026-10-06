@@ -99,11 +99,14 @@ for art_dir in artifact_dirs:
     print(f"\nProcessing Artifact Directory: {art_dir}")
     
     # 1. Load run metadata
+    # FIXED: Ensure we pick the root metadata file to protect against nested module paths from the combined upload
     meta_files = [f for f in all_files if f.startswith(art_dir) and f.endswith("run_metadata.json")]
     if not meta_files:
         print(f"Skipping {art_dir}: No run_metadata.json found.")
         continue
     
+    # Sort paths by length to ensure the top-level directory file comes first
+    meta_files.sort(key=len)
     meta_path = meta_files[0]
     github_url = ""
     sha = ""
@@ -118,7 +121,6 @@ for art_dir in artifact_dirs:
         print(f"Error reading metadata {meta_path}: {e}")
         continue
 
-    # CHANGED: Dynamically extract clean repo name from Github URL
     repo_name_clean = github_url.rstrip("/").split("/")[-1].replace(".git", "")
 
     # --- 2. Parse iDFlakies Results ---
@@ -173,7 +175,6 @@ for art_dir in artifact_dirs:
             f.endswith(ext) for ext in [".xml", ".html", ".json", ".keep", ".png", ".jpg", ".class"]
         )
     ]
-    # FIXED: Added logic loop block placeholder for NonDex parsing to prevent empty outputs
     for nd_file in nondex_files:
         try:
             with open(nd_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -185,16 +186,14 @@ for art_dir in artifact_dirs:
             print(f"Error reading NonDex file {nd_file}: {e}")
 
     # --- 5. Parse FlakeSync Results ---
-    # FIXED: Removed the leading hyphen from "-ResultMethods.txt" to match the actual FlakeSync file output string patterns
     flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("ResultMethods.txt")]
     
     for rm_file in flakesync_files:
         loc_count = 0 
         try:
-            # FIXED: Removed hyphen from the string replacement target
-            base_name = os.path.basename(rm_file).replace("ResultMethods.txt", "")
+            # FIXED: Added .rstrip(".") to remove lingering dots from package names
+            base_name = os.path.basename(rm_file).replace("ResultMethods.txt", "").rstrip(".")
                 
-            # FIXED: Removed hyphen from the string companion target
             loc_file = rm_file.replace("ResultMethods.txt", "Locations.txt")
             if os.path.exists(loc_file):
                 with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
