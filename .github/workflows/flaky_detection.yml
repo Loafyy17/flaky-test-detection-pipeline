@@ -250,3 +250,9 @@ jobs:
         with:
           name: nondex_summary_csv
           path: nondex_summary.csv
+
+      - name: Upload FlakeSync TD Tests CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: flakesync_td_tests_csv
+          path: flakesync_td_tests.csv
