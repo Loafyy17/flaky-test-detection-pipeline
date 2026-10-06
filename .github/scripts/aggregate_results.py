@@ -176,31 +176,26 @@ for art_dir in artifact_dirs:
             f.endswith(ext) for ext in [".xml", ".html", ".json", ".keep", ".png", ".jpg", ".class"]
         )
     ]
-    # --- 5. Parse FlakeSync Results ---
-    flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-Locations.txt")]
-    for loc_file in flakesync_files:
-        try:
-            base_name = os.path.basename(loc_file).replace("-Locations.txt", "")
-            with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
-                loc_count = sum(1 for line in f if line.strip()) # Count non-empty lines
+# --- 5. Parse FlakeSync Results ---
+        # Find unique test names using the -ResultMethods.txt files
+        flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-ResultMethods.txt")]
+        for rm_file in flakesync_files:
+            try:
+                # Extract the exact test name from the ResultMethods filename
+                base_name = os.path.basename(rm_file).replace("-ResultMethods.txt", "")
                 
-            # If locations > 0, injecting delays caused a failure (TD Test)
-            if loc_count > 0:
+                # Check for the corresponding Locations.txt file to count failure-inducing delays
+                loc_file = rm_file.replace("-ResultMethods.txt", "-Locations.txt")
+                loc_count = 0
+                if os.path.exists(loc_file):
+                    with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
+                        loc_count = sum(1 for line in f if line.strip()) # Count non-empty lines
+                
+                # Add to the CSV list based on the ResultMethods discovery
                 flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
-        except Exception as e:
-            print(f"Error reading FlakeSync file {loc_file}: {e}")
+            except Exception as e:
+                print(f"Error reading FlakeSync file {rm_file}: {e}")
                 
-    for res_file in nondex_files:
-        try:
-            with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    cleaned = clean_and_validate_test_name(line)
-                    if cleaned:
-                        # CHANGED: Using repo_name_clean instead of github_url
-                        nondex_rows.append([repo_name_clean, sha, cleaned])
-        except Exception as e:
-            print(f"Error reading NonDex file {res_file}: {e}")
-
 # Deduplicate rows completely
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
 nondex_rows = [list(x) for x in set(tuple(r) for r in nondex_rows)]
