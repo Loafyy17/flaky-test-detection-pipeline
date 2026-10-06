@@ -210,7 +210,9 @@ jobs:
         if: always()
         with:
           name: flakesync-results-${{ matrix.repo_name }}-${{ matrix.sha }}
-          path: "**/.flakesync/**"
+          path: |
+            "**/.flakesync/**"
+            **/run_metadata.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
