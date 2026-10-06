@@ -136,7 +136,6 @@ for art_dir in artifact_dirs:
         if base_name == "flaky-lists.json":
             detected = parse_idflakies_json(res_file)
             for t_name in detected:
-                # CHANGED: Using repo_name_clean instead of github_url
                 idflakies_rows.append([repo_name_clean, sha, t_name])
                 
         elif base_name in ["failing-tests", "failing"]:
@@ -145,7 +144,6 @@ for art_dir in artifact_dirs:
                     for line in f:
                         cleaned = clean_and_validate_test_name(line)
                         if cleaned:
-                            # CHANGED: Using repo_name_clean instead of github_url
                             idflakies_rows.append([repo_name_clean, sha, cleaned])
             except Exception as e:
                 print(f"Error reading iDFlakies file {res_file}: {e}")
@@ -164,7 +162,6 @@ for art_dir in artifact_dirs:
                     class_name = base_name.replace("TEST-", "").replace(".xml", "")
                     cleaned = clean_and_validate_test_name(class_name)
                     if cleaned:
-                        # CHANGED: Using repo_name_clean instead of github_url
                         idflakies_rows.append([repo_name_clean, sha, cleaned])
         except Exception as e:
             print(f"Error reading xml output verification step {xml_file}: {e}")
@@ -176,22 +173,31 @@ for art_dir in artifact_dirs:
             f.endswith(ext) for ext in [".xml", ".html", ".json", ".keep", ".png", ".jpg", ".class"]
         )
     ]
-# --- 5. Parse FlakeSync Results ---
-        # Find unique test names using the -ResultMethods.txt files
+    # FIXED: Added logic loop block placeholder for NonDex parsing to prevent empty outputs
+    for nd_file in nondex_files:
+        try:
+            with open(nd_file, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    cleaned = clean_and_validate_test_name(line)
+                    if cleaned:
+                        nondex_rows.append([repo_name_clean, sha, cleaned])
+        except Exception as e:
+            print(f"Error reading NonDex file {nd_file}: {e}")
+
+    # --- 5. Parse FlakeSync Results ---
+    # FIXED: Restored proper block indentation inside the main loop to prevent Scope/NameErrors
     flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-ResultMethods.txt")]
     for rm_file in flakesync_files:
+        # FIXED: Explicitly reset loc_count for every file to fix the state-leak logic bug
+        loc_count = 0 
         try:
-            # Extract the exact test name from the ResultMethods filename
             base_name = os.path.basename(rm_file).replace("-ResultMethods.txt", "")
                 
-            # Check for the corresponding Locations.txt file to count failure-inducing delays
             loc_file = rm_file.replace("-ResultMethods.txt", "-Locations.txt")
-            loc_count = 0
             if os.path.exists(loc_file):
                 with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
-                    loc_count = sum(1 for line in f if line.strip()) # Count non-empty lines
+                    loc_count = sum(1 for line in f if line.strip())
                 
-            # Add to the CSV list based on the ResultMethods discovery
             flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
         except Exception as e:
             print(f"Error reading FlakeSync file {rm_file}: {e}")
