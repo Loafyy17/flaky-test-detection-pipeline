@@ -27,7 +27,11 @@ else:
     deduped = deduped.iloc[offset:]
 
 matrix_include = []
-test_col = 'Fully-Qualified Test Name (e.g., org.example.Class.method)'
+# Find the test name column dynamically to avoid exact-match spelling errors from IDoFT
+test_col = next((col for col in df.columns if 'Fully-Qualified Test' in col), None)
+
+if not test_col:
+    raise ValueError("Could not find the Fully-Qualified Test Name column in the IDoFT CSV!")
 
 for _, row in deduped.iterrows():
     repo_url = str(row['Project URL']).strip()
