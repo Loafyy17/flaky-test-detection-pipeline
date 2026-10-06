@@ -185,15 +185,17 @@ for art_dir in artifact_dirs:
             print(f"Error reading NonDex file {nd_file}: {e}")
 
     # --- 5. Parse FlakeSync Results ---
-    # FIXED: Restored proper block indentation inside the main loop to prevent Scope/NameErrors
-    flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("-ResultMethods.txt")]
+    # FIXED: Removed the leading hyphen from "-ResultMethods.txt" to match the actual FlakeSync file output string patterns
+    flakesync_files = [f for f in all_files if f.startswith(art_dir) and ".flakesync" in f and f.endswith("ResultMethods.txt")]
+    
     for rm_file in flakesync_files:
-        # FIXED: Explicitly reset loc_count for every file to fix the state-leak logic bug
         loc_count = 0 
         try:
-            base_name = os.path.basename(rm_file).replace("-ResultMethods.txt", "")
+            # FIXED: Removed hyphen from the string replacement target
+            base_name = os.path.basename(rm_file).replace("ResultMethods.txt", "")
                 
-            loc_file = rm_file.replace("-ResultMethods.txt", "-Locations.txt")
+            # FIXED: Removed hyphen from the string companion target
+            loc_file = rm_file.replace("ResultMethods.txt", "Locations.txt")
             if os.path.exists(loc_file):
                 with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
                     loc_count = sum(1 for line in f if line.strip())
@@ -201,6 +203,7 @@ for art_dir in artifact_dirs:
             flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
         except Exception as e:
             print(f"Error reading FlakeSync file {rm_file}: {e}")
+
                 
 # Deduplicate rows completely
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]
