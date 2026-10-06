@@ -58,16 +58,13 @@ jobs:
           repository: ${{ matrix.repo_slug }}
           ref: ${{ matrix.sha }}
 
-      # 1. CHANGED: Dynamically detect Java version from the repository's pom.xml
-            # Dynamically detect Java version using an absolute system filepath
+      # 1. Dynamically detect Java version from the repository's pom.xml
       - name: Set up Java Environment
         id: setup-java
         uses: actions/setup-java@v4
         with:
           distribution: 'corretto'
-          # Force an absolute workspace path to prevent parsing engine errors
           java-version-file: '${{ github.workspace }}/${{ matrix.module_path }}/pom.xml'
-          # Safe baseline fallback if parsing fails
           java-version: '8' 
 
       - name: Save Run Metadata & Pre-create Output Directories
@@ -90,24 +87,19 @@ jobs:
             cp .output_metadata/run_metadata.json ${{ matrix.module_path }}/.output_metadata/run_metadata.json
           fi
 
-      # 2. CHANGED: Added condition to ONLY run iDFlakies on Java 8 (handles "8" or "1.8")
+      # 2. Run iDFlakies on Java 8
       - name: Run iDFlakies Detection
         if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          
-          # REMOVED: Static export JAVA_HOME=$JAVA_HOME_8_X64
-          # The action sets the active JAVA_HOME for us automatically.
           unset MAVEN_OPTS
           
-          # Verify active runtime versions
           echo "=== VERIFYING IDFLAKIES JVM RUNTIME ==="
           java -version
           mvn -version
           echo "======================================="
 
-          # Quietly compile test classes
           mvn test-compile -q -B -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
           
           JOB_TIMEOUT=${{ inputs.max_job_timeout != '' && inputs.max_job_timeout || 20 }}
@@ -128,13 +120,11 @@ jobs:
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true
 
-      # 3. CHANGED: NonDex runs for all detected Java versions, using the active version set by the setup step
+      # 3. Run NonDex Detection
       - name: Run NonDex Detection
         continue-on-error: true
         run: |
           cd ${{ matrix.module_path }}
-          
-          # REMOVED: Static export JAVA_HOME=$JAVA_HOME_8_X64
           
           echo "=== VERIFYING NONDEX JVM RUNTIME ==="
           java -version
@@ -153,20 +143,7 @@ jobs:
             -Drat.skip=true \
             -Dmaven.javadoc.skip=true
 
-      - name: Archive Job Results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: results-${{ matrix.repo_name }}-${{ matrix.sha }}
-          path: |
-            **/run_metadata.json
-            **/.dtfixingtools/**
-            **/.nondex/**
-            **/failing-test-output*/**
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
-          
+      # 4. Set up & build FlakeSync (Moved up before Archiving)
       - name: Checkout FlakeSync Repository
         uses: actions/checkout@v4
         with:
@@ -180,6 +157,7 @@ jobs:
           export PATH=$JAVA_HOME/bin:$PATH
           mvn clean install -U -DskipTests
 
+      # 5. Run FlakeSync Detection
       - name: Run FlakeSync (Concurrent Find & Delay Injection)
         continue-on-error: true
         run: |
@@ -187,7 +165,6 @@ jobs:
           export JAVA_HOME=$JAVA_HOME_8_X64
           export PATH=$JAVA_HOME/bin:$PATH
           
-          # Read the comma-separated test names from the matrix script
           TEST_NAMES="${{ matrix.test_names }}"
           
           if [ -n "$TEST_NAMES" ]; then
@@ -198,7 +175,7 @@ jobs:
               echo "-> Finding concurrent methods"
               mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:concurrentfind \
                 -Dflakesync.testName="$TEST_NAME" -B -Dcheckstyle.skip=true -Drat.skip=true
-                
+              
               echo "-> Injecting delays to locate failures"
               mvn edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:delaylocs \
                 -Dflakesync.testName="$TEST_NAME" -B -Dcheckstyle.skip=true -Drat.skip=true
@@ -207,14 +184,18 @@ jobs:
             echo "Warning: No test names provided in matrix to run FlakeSync."
           fi
 
-      - name: Archive FlakeSync Results
+      # 6. Combined Archival Step (Captures iDFlakies, NonDex, and FlakeSync)
+      - name: Archive All Tool Results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: flakesync-results-${{ matrix.repo_name }}-${{ matrix.sha }}
+          name: results-${{ matrix.repo_name }}-${{ matrix.sha }}
           path: |
-            "**/.flakesync/**"
             **/run_metadata.json
+            **/.dtfixingtools/**
+            **/.nondex/**
+            **/.flakesync/**
+            **/failing-test-output*/**
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
