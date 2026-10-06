@@ -75,7 +75,6 @@ The number of tests you can run concurrently may be limited! As such there is an
 
 ### Step 4: Run and Wait for Results!
 The artifacts from this automated pipeline will appear after the workflow is complete.  
-The artifacts we are looking for are `idflakies_summary_csv` and `nondex_summary_csv`.
 
 <img width="2002" height="458" alt="image" src="https://github.com/user-attachments/assets/7755b4e3-4732-4a8b-af5f-04268f80e279" />
 
