@@ -74,38 +74,35 @@ jobs:
           rm -rf ~/.m2
           mkdir -p ~/.m2
           cat <<EOF > ~/.m2/settings.xml
-          <settings xmlns="http://apache.org"
-                    xmlns:xsi="http://w3.org"
-                    xsi:schemaLocation="http://apache.org https://apache.org">
-            <mirrors>
-              <!-- Intercept hardcoded or broken apache snapshot URLs and point to proper repository server -->
-              <mirror>
-                <id>force-apache-snapshots-nexus</id>
-                <name>Corrected Apache Snapshots Core Server</name>
-                <url>https://repository.apache.org/snapshots/</url>
-                <mirrorOf>apache-snapshots,apache.snapshots,apache-snapshot</mirrorOf>
-              </mirror>
-            </mirrors>
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
             <profiles>
               <profile>
-                <id>apache-snapshots-profile</id>
+                <id>fallback-snapshots-profile</id>
                 <activation>
                   <activeByDefault>true</activeByDefault>
                 </activation>
                 <repositories>
                   <repository>
-                    <id>apache-snapshots</id>
+                    <id>apache-snapshots-repo</id>
                     <url>https://repository.apache.org/snapshots/</url>
                     <snapshots><enabled>true</enabled></snapshots>
-                    <releases><enabled>true</enabled></releases>
+                    <releases><enabled>false</enabled></releases>
+                  </repository>
+                  <repository>
+                    <id>ossrh-snapshots-repo</id>
+                    <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+                    <snapshots><enabled>true</enabled></snapshots>
+                    <releases><enabled>false</enabled></releases>
                   </repository>
                 </repositories>
                 <pluginRepositories>
                   <pluginRepository>
-                    <id>apache-plugins-snapshots</id>
+                    <id>apache-plugin-snapshots-repo</id>
                     <url>https://repository.apache.org/snapshots/</url>
                     <snapshots><enabled>true</enabled></snapshots>
-                    <releases><enabled>true</enabled></releases>
+                    <releases><enabled>false</enabled></releases>
                   </pluginRepository>
                 </pluginRepositories>
               </profile>
@@ -113,7 +110,7 @@ jobs:
           </settings>
           EOF
 
-     # ==========================================================
+      # ==========================================================
       # BUILD AND INSTALL IDFLAKIES MAVEN PLUGIN LOCALLY
       # ==========================================================
       - name: Checkout iDFlakies Repository
@@ -122,16 +119,27 @@ jobs:
         with:
           repository: UT-SE-Research/iDFlakies
           path: idflakies-repo
-          
+
+      - name: Build and Install iDFlakies Plugin Locally
+        if: startsWith(steps.setup-java.outputs.version, '8') || startsWith(steps.setup-java.outputs.version, '1.8')
+        run: |
+          cd idflakies-repo
+          mvn clean install -DskipTests -B
+
       # ==========================================================
-      # FORCE GLOBAL DEPENDENCY RESOLUTION PASS
+      # FORCE ROOT INSTALL PASS FOR MULTI-MODULE BOMs
       # ==========================================================
-      - name: Force Global Dependency Resolution Pass
+      - name: Force Global Dependency & Multi-Module Local Resolution
         continue-on-error: true
         run: |
-          cd ${{ matrix.module_path }}
-          mvn dependency:go-offline -B -U -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          echo "=== INSTALLING ROOT & PARENT POMS TO LOCAL M2 ==="
           mvn clean install -B -U -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          
+          if [ "${{ matrix.module_path }}" != "." ]; then
+            echo "=== PRE-BUILDING TARGET SUBMODULE: ${{ matrix.module_path }} ==="
+            cd ${{ matrix.module_path }}
+            mvn test-compile -B -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+          fi
 
       - name: Save Run Metadata & Pre-create Output Directories
         run: |
