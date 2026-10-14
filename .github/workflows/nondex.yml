@@ -62,7 +62,7 @@ jobs:
           module-path: ${{ inputs.module_path }}
           
       - name: Install Root Project Dependencies
-        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -pl ${{ inputs.module_path }} -am
 
       - name: Run NonDex
         continue-on-error: true
