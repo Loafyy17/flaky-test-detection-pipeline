@@ -62,6 +62,9 @@ jobs:
           sha: ${{ inputs.sha }}
           module-path: ${{ inputs.module_path }}
 
+      - name: Install Root Project Dependencies
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V
+
       # Always runs on Java 8; on Java 11/17 only when the idflakies_java9plus toggle is on.
       - name: Run iDFlakies
         if: steps.jdk.outputs.java-version == '8' || inputs.idflakies_java9plus
