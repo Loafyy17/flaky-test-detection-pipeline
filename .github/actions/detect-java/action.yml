@@ -28,7 +28,7 @@ runs:
       run: python3 "${{ github.action_path }}/../../scripts/detect_java_version.py" "${{ inputs.module-path }}"
 
     - name: Set up project JDK
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         distribution: corretto
         java-version: ${{ steps.detect.outputs.java_version }}
