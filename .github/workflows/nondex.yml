@@ -60,6 +60,9 @@ jobs:
           repo-url: ${{ inputs.repo_url }}
           sha: ${{ inputs.sha }}
           module-path: ${{ inputs.module_path }}
+          
+      - name: Install Root Project Dependencies
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V
 
       - name: Run NonDex
         continue-on-error: true
