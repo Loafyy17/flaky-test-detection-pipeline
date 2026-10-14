@@ -142,6 +142,15 @@ def find_declared(chain, props):
 
     for path, root in chain:
         rel = os.path.relpath(path)
+        for profile in root.findall(".//profile"):
+            act = profile.find("activation")
+            if act is not None:
+                jdk = text_of(act, "jdk")
+                # Ignore negative activations like "!1.8"
+                if jdk and not jdk.startswith("!"):
+                    v = enforcer_lower_bound(resolve(jdk, props))
+                    if v:
+                        found.append((v, "profile activation jdk " + jdk + " in " + rel))
         for plugin in root.findall(".//plugin"):
             artifact = text_of(plugin, "artifactId")
             if artifact == "maven-compiler-plugin":
