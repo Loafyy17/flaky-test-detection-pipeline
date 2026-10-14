@@ -90,11 +90,20 @@ def pom_chain(repo_root, module_path):
 def merged_properties(chain):
     props = {}
     for _, root in reversed(chain):  # parents first, children override
+        # 1. Base properties
         block = root.find("properties")
         if block is not None:
             for p in block:
                 if isinstance(p.tag, str) and p.text:
                     props[p.tag] = p.text.strip()
+        
+        # 2. Profile properties (optimistically include them)
+        for profile in root.iter("profile"):
+            p_block = profile.find("properties")
+            if p_block is not None:
+                for p in p_block:
+                    if isinstance(p.tag, str) and p.text:
+                        props[p.tag] = p.text.strip()
     return props
 
 
@@ -133,7 +142,7 @@ def find_declared(chain, props):
 
     for path, root in chain:
         rel = os.path.relpath(path)
-        for plugin in root.iter("plugin"):
+        for plugin in root.findall(".//plugin"):
             artifact = text_of(plugin, "artifactId")
             if artifact == "maven-compiler-plugin":
                 for tag in COMPILER_TAGS:
