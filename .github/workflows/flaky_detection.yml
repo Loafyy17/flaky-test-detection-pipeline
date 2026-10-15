@@ -140,6 +140,33 @@ jobs:
       - name: Run Aggregator Script
         run: python .github/scripts/aggregate_results.py
 
+      - name: Merge CSV rows
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import csv, glob
+          COLUMNS = ["Tool","Failure rate","In pr-data","Project URL","SHA Detected","Module Path",
+                     "Fully-Qualified Test Name (packageName.ClassName.methodName)","Category","Status","PR Link"]
+          seen, rows = set(), []
+          for p in sorted(glob.glob("artifacts/rows-*/*.csv")):
+              with open(p, newline="") as fh:
+                  for r in csv.DictReader(fh):
+                      key = tuple(r[c] for c in COLUMNS)
+                      if key not in seen:
+                          seen.add(key); rows.append(key)
+          with open("flaky_tests.csv", "w", newline="") as fh:
+              w = csv.writer(fh); w.writerow(COLUMNS); w.writerows(rows)
+          print(len(rows), "rows merged")
+          EOF
+
+      - name: Upload merged flaky_tests.csv
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky_tests_csv
+          path: flaky_tests.csv
+          retention-days: 7
+
       - name: Organize Artifacts into Folders
         run: |
           # 1. Create the master folders with subfolders for each tool
