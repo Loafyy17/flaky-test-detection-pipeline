@@ -155,6 +155,15 @@ jobs:
           test-names: ${{ inputs.test_names }}
           job-timeout-minutes: ${{ inputs.max_job_timeout }}
 
+      - name: Build CSV rows
+        if: always()
+        continue-on-error: true
+        env:
+          REPO_URL: ${{ inputs.repo_url }}
+          SHA: ${{ inputs.sha }}
+          MODULE_PATH: ${{ inputs.module_path }}
+        run: python3 .pipeline-tools/.github/scripts/build_rows.py idflakies "$REPO_URL" "$SHA" "$MODULE_PATH"
+
       - name: Archive FlakeSync Results and Logs
         if: always()
         uses: ./.pipeline-tools/.github/actions/archive-results
