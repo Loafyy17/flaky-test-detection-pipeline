@@ -25,7 +25,7 @@ runs:
       shell: bash
       env:
         FORCE_JAVA_VERSION: ${{ inputs.force-java-version }}
-      run: python3 "${{ github.action_path }}/../../scripts/detect_java_version.py" "${{ inputs.module-path }}"
+      run: python3 "${{ github.action_path }}/../scripts/detect_java_version.py" "${{ inputs.module-path }}"
 
     - name: Set up project JDK
       uses: actions/setup-java@v5
