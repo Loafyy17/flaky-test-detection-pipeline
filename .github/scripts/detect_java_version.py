@@ -204,6 +204,7 @@ def main():
     else:
         chain = pom_chain(".", module_path)
         found = find_declared(chain, merged_properties(chain)) if chain else []
+        found += jvm_config_signal(module_path)
         if not found:
             declared, chosen = 8, 8
             reason = "no Java level declared (or no pom.xml found); defaulting to 8"
