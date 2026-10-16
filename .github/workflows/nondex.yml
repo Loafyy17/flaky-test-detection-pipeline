@@ -70,7 +70,7 @@ jobs:
         with:
           tool: nondex
           module-path: ${{ inputs.module_path }}
-          mvn-args: edu.illinois:nondex-maven-plugin:${{ env.NONDEX_VERSION }}:nondex
+          mvn-args: edu.illinois:nondex-maven-plugin:${{ env.NONDEX_VERSION }}:nondex -DnondexRuns=10
 
       - name: Build CSV rows
         if: always()
