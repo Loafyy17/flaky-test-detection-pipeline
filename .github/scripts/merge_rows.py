@@ -55,12 +55,11 @@ for p in files:
             if cands:
                 m = best(cands, sha, mod)
                 matched += 1
-                # Project URL ... Notes all come from the pr-data row (fall back to the run's
-                # value only if pr-data leaves a field blank).
+                # Project URL .. Notes come from the matching pr-data row (pr-data is the source
+                # of truth); our own detection values are only the fallback for blank fields.
                 row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a", "Yes",
                        m.get("Project URL") or url, m.get("SHA Detected") or sha,
-                       m.get("Module Path") or mod, test,
-                       m.get("Category", ""), m.get("Status", ""),
+                       m.get("Module Path") or mod, test, m.get("Category", ""), m.get("Status", ""),
                        m.get("PR Link", ""), m.get("Notes", "")]
             else:
                 row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a",
