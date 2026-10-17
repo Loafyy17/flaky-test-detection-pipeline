@@ -55,10 +55,12 @@ for p in files:
             if cands:
                 m = best(cands, sha, mod)
                 matched += 1
-                # Project URL / SHA / Module describe where *we* detected it; the
-                # classification columns come from the matching pr-data row.
+                # Project URL ... Notes all come from the pr-data row (fall back to the run's
+                # value only if pr-data leaves a field blank).
                 row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a", "Yes",
-                       url, sha, mod, test, m.get("Category", ""), m.get("Status", ""),
+                       m.get("Project URL") or url, m.get("SHA Detected") or sha,
+                       m.get("Module Path") or mod, test,
+                       m.get("Category", ""), m.get("Status", ""),
                        m.get("PR Link", ""), m.get("Notes", "")]
             else:
                 row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a",

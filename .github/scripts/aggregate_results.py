@@ -182,14 +182,15 @@ for art_dir in artifact_dirs:
             print(f"Error reading NonDex file {nd_file}: {e}")
 
     # --- 5. Parse FlakeSync Results ---
-    # A test counts as FlakeSync-detected when delaylocs wrote a non-empty Locations file,
-    # i.e. injecting a delay at those locations made the test fail.
+    # Locations.txt = delay value (first line) + the locations where delays were injected.
+    # It does not prove a failure; build_rows.py decides detection using the failing delay runs.
+    # Here we only report the location count (header line excluded) and skip files with none.
     flakesync_files = [f for f in all_files if f.startswith(art_dir_clean) and ".flakesync" in f and f.endswith("Locations.txt")]
     for loc_file in flakesync_files:
         try:
             base_name = os.path.basename(loc_file).replace("Locations.txt", "").rstrip(".-")
             with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
-                loc_count = sum(1 for line in f if line.strip())
+                loc_count = max(sum(1 for line in f if line.strip()) - 1, 0)
             if loc_count > 0:
                 flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
         except Exception as e:

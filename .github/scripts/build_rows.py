@@ -172,12 +172,18 @@ else:  # flakesync
     log_path = os.environ.get("TOOL_LOG") or next(
         (p for p in files_under("logs") if os.path.basename(p) == "flakesync_log.txt"), None)
     flake_rates = flakesync_rates(log_path)
-    # Detected = delaylocs found at least one location where an injected delay makes the
-    # test fail. ResultMethods.txt alone only means concurrent methods exist.
+    # Locations.txt: first line is the injected delay (ms), the rest are the code locations
+    # where a delay was placed. It is rewritten by every delaylocs run, so it only reflects
+    # the last one, and it says nothing about failures. Detected therefore requires BOTH
+    # at least one delay-injected run that failed (from the log) AND at least one location.
     for p in files_under(".flakesync"):
-        if p.endswith("Locations.txt") and any(l.strip() for l in lines_of(p)):
+        if p.endswith("Locations.txt"):
             n = norm_test(os.path.basename(p).replace("Locations.txt", ""))
-            if n: names.add(n)
+            lines = [l for l in lines_of(p) if l.strip()]
+            n_locs = max(len(lines) - 1, 0)          # drop the delay header line
+            if n and n_locs > 0 and flake_rates.get(n, (0, 0))[0] > 0:
+                names.add(n)
+                print(f"flakesync detected: {n} failed {flake_rates[n][0]}/{flake_rates[n][1]} delay runs, {n_locs} locations")
 
 out_dir = os.path.join(os.environ.get("GITHUB_WORKSPACE", "."), "flaky_rows")
 os.makedirs(out_dir, exist_ok=True)
