@@ -8,7 +8,7 @@ later, by merge_rows.py in the aggregate job.
 
 File selection and name cleaning mirror aggregate_results.py, which is known to work.
 """
-import csv, json, os, sys
+import csv, json, os, re, sys
 from collections import defaultdict
 
 from csv_common import RUN_COLUMNS, norm_test
@@ -75,6 +75,40 @@ def result_entries(obj):
             yield from result_entries(v)
 
 
+MARKER = re.compile(r"^=== flakesync: (\S+?)(?: \((\w+)\))? ===\s*$")
+# Surefire per-class result line, e.g.
+#   Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.1 s <<< FAILURE! - in a.b.C
+SUREFIRE = re.compile(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+).*? in (\S+)\s*$")
+
+
+def flakesync_rates(log_path):
+    """test (a.b.C.m) -> (failed_runs, total_runs), read from the Maven log.
+
+    run-detector writes '=== flakesync: <Class#method> (<goal>) ===' before each goal.
+    Only the delaylocs section counts (those are the delay-injected runs); inside it every
+    Surefire result line for the test's own class is a run, and it failed if Failures+Errors > 0.
+    """
+    out = {}
+    if not log_path or not os.path.isfile(log_path):
+        return out
+    cur_test, cur_goal, cls = None, None, None
+    for line in lines_of(log_path):
+        m = MARKER.match(line.strip())
+        if m:
+            cur_test, cur_goal = m.group(1), m.group(2)
+            cls = cur_test.split("#")[0]
+            continue
+        if cur_goal != "delaylocs" or not cur_test:
+            continue
+        m = SUREFIRE.search(line.strip())
+        if m and m.group(5) == cls:
+            ran, failed = int(m.group(1)) - int(m.group(4)), int(m.group(2)) + int(m.group(3))
+            if ran > 0:
+                f, n = out.get(norm_test(cur_test), (0, 0))
+                out[norm_test(cur_test)] = (f + min(failed, ran), n + ran)
+    return out
+
+
 fails = defaultdict(set)   # test -> run ids it failed in
 seen = defaultdict(set)    # test -> run ids it ran in (iDFlakies)
 runs = set()               # all NonDex run folders
@@ -135,6 +169,9 @@ elif tool == "nondex":
 
 else:  # flakesync
     names = set()
+    log_path = os.environ.get("TOOL_LOG") or next(
+        (p for p in files_under("logs") if os.path.basename(p) == "flakesync_log.txt"), None)
+    flake_rates = flakesync_rates(log_path)
     # Detected = delaylocs found at least one location where an injected delay makes the
     # test fail. ResultMethods.txt alone only means concurrent methods exist.
     for p in files_under(".flakesync"):
@@ -153,7 +190,9 @@ with open(out, "w", newline="") as fh:
             rate = f"{len(fails[t])}/{len(seen[t])}"
         elif tool == "nondex" and runs:
             rate = f"{len(fails[t] & runs)}/{len(runs)}"
+        elif tool == "flakesync" and flake_rates.get(t):
+            rate = f"{flake_rates[t][0]}/{flake_rates[t][1]}"
         else:
-            rate = "n/a"   # FlakeSync reports a verdict, not pass/fail counts
+            rate = "n/a"   # no run counts found in the log
         w.writerow([tool, rate, repo_url, sha, module_path, t])
 print(f"tool={tool} runs_seen={len(runs)} tests={len(names)} -> {out}")

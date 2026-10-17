@@ -37,6 +37,16 @@ for d in sorted(glob.glob("artifacts/*-results-*")):
         print(f"skip {name}: bad metadata ({e})")
         continue
     env = dict(os.environ, GITHUB_WORKSPACE=os.path.join(OUT, name))
+    # The Maven log lives in a separate artifact: <tool>_logs_<repo>_<sha>
+    env.pop("TOOL_LOG", None)
+    sha = meta.get("sha", "")
+    rest = name[len(tool) + len("-results-"):]
+    repo = rest[:-(len(sha) + 1)] if sha and rest.endswith("-" + sha) else rest
+    logs_dir = os.path.join("artifacts", f"{tool}_logs_{repo}_{sha}")
+    for root, _, files in os.walk(logs_dir):
+        if f"{tool}_log.txt" in files:
+            env["TOOL_LOG"] = os.path.abspath(os.path.join(root, f"{tool}_log.txt"))
+            break
     r = subprocess.run([sys.executable, BUILD_ROWS, tool, meta.get("github_url", ""),
                         meta.get("sha", ""), meta.get("module_path", ".") or "."],
                        cwd=d, env=env, capture_output=True, text=True)
