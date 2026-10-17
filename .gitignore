@@ -25,6 +25,9 @@ artifacts/
 idflakies_summary.csv
 nondex_summary.csv
 flaky_test_summary.csv
+flaky_tests.csv
+flaky_rows/
+pr-data.csv
 
 # IDE & Editor folders
 .vscode/

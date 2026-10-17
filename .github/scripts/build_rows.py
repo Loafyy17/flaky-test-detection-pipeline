@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """Usage: build_rows.py <tool> <repo_url> <sha> <module_path>
-File selection and name cleaning mirror aggregate_results.py, which is known to work."""
-import csv, io, json, os, sys, urllib.request
+
+Runs inside each detector job. Collects the flaky tests that tool found plus a
+failure rate (failed runs / total runs) and writes flaky_rows/<tool>.csv.
+The pr-data.csv lookup (In pr-data, Category, Status, PR Link, Notes) is done once,
+later, by merge_rows.py in the aggregate job.
+
+File selection and name cleaning mirror aggregate_results.py, which is known to work.
+"""
+import csv, json, os, sys
 from collections import defaultdict
 
+from csv_common import RUN_COLUMNS, norm_test
+
+if len(sys.argv) < 5:
+    sys.exit(__doc__)
 tool, repo_url, sha, module_path = sys.argv[1:5]
-PR_DATA = "https://raw.githubusercontent.com/TestingResearchIllinois/idoft/main/pr-data.csv"
-COLUMNS = ["Tool", "Failure rate", "In pr-data", "Project URL", "SHA Detected",
-           "Module Path", "Fully-Qualified Test Name (packageName.ClassName.methodName)",
-           "Category", "Status", "PR Link"]
+if tool not in ("idflakies", "nondex", "flakesync"):
+    sys.exit(f"unknown tool {tool!r} (expected idflakies, nondex or flakesync)")
+
 SKIP_EXT = (".html", ".keep", ".png", ".jpg", ".class", ".xml", ".json")
-
-
-def norm(u):
-    u = u.strip().rstrip("/").removesuffix(".git").lower()
-    return u.replace("http://", "https://").replace("://www.", "://")
-
-
-def mod_norm(m):
-    return m.strip().strip("./")
 
 
 def clean(raw):
@@ -68,34 +69,12 @@ def result_entries(obj):
             yield from result_entries(v)
 
 
-# --- pr-data lookup (never fatal) ---
-pr = defaultdict(list)   # (project url, test) -> every matching IDoFT row
-try:
-    text = urllib.request.urlopen(PR_DATA, timeout=60).read().decode("utf-8", "ignore")
-    for r in csv.DictReader(io.StringIO(text)):
-        r = {k.strip(): (v or "").strip() for k, v in r.items() if k}
-        tcol = next((k for k in r if k.startswith("Fully-Qualified Test")), None)
-        if tcol:
-            pr[(norm(r.get("Project URL", "")), r[tcol])].append(r)
-except Exception as e:
-    print("pr-data lookup failed:", e)
-
-
-def find_match(test):
-    rows = pr.get((norm(repo_url), test))
-    if not rows: return None
-    return max(rows, key=lambda r: (r.get("SHA Detected", "") == sha,
-                                    mod_norm(r.get("Module Path", "")) == mod_norm(module_path),
-                                    bool(r.get("PR Link")), bool(r.get("Status"))))
-
-
-fails = defaultdict(set)   # test -> set of run ids it failed in
-seen = defaultdict(set)    # test -> set of run ids it appeared in (iDFlakies)
-runs = set()               # all run ids seen (NonDex)
+fails = defaultdict(set)   # test -> run ids it failed in
+seen = defaultdict(set)    # test -> run ids it ran in (iDFlakies)
+runs = set()               # all NonDex run folders
 
 if tool == "idflakies":
-    # 1) find flaky tests, using the same logic as the old parser
-    flaky = set()
+    names = set()
     for p in files_under(".dtfixingtools"):
         b = os.path.basename(p)
         if b == "flaky-lists.json":
@@ -112,25 +91,29 @@ if tool == "idflakies":
                                           if isinstance(item.get(k), str)), None)
                             else:
                                 n = None
-                            if n: flaky.add(n)
+                            if n: names.add(n)
             except Exception as e:
                 print("bad json", p, e)
         elif b in ("failing-tests", "failing"):
             for line in lines_of(p):
                 n = clean(line)
-                if n: flaky.add(n)
-    # 2) count failures per result file (best effort; falls back to n/a)
+                if n: names.add(n)
+    # Failure rate: look at every per-round result file (.json, or extension-less)
     for p in files_under(".dtfixingtools"):
-        if p.endswith(".json") and os.path.basename(p) != "flaky-lists.json":
-            try:
-                data = json.load(open(p, errors="ignore"))
-            except Exception:
+        b = os.path.basename(p)
+        if b == "flaky-lists.json" or not (b.endswith(".json") or "." not in b):
+            continue
+        try:
+            data = json.load(open(p, errors="ignore"))
+        except Exception:
+            continue
+        for name, result in result_entries(data):
+            r = result.upper()
+            if r in ("SKIPPED", "SKIP"):
                 continue
-            for name, result in result_entries(data):
-                seen[name].add(p)
-                if result.upper() in ("FAILURE", "ERROR"):
-                    fails[name].add(p)
-    names = flaky
+            seen[name].add(p)
+            if r in ("FAILURE", "ERROR", "FAIL"):
+                fails[name].add(p)
 
 elif tool == "nondex":
     names = set()
@@ -144,29 +127,25 @@ elif tool == "nondex":
                 names.add(n)
                 fails[n].add(d)
 
-elif tool == "flakesync":
+else:  # flakesync
     names = set()
     for p in files_under(".flakesync"):
         if p.endswith("ResultMethods.txt"):
-            names.add(os.path.basename(p).replace("ResultMethods.txt", "").rstrip("."))
-
-else:
-    names = set()
+            n = norm_test(os.path.basename(p).replace("ResultMethods.txt", ""))
+            if n: names.add(n)
 
 out_dir = os.path.join(os.environ.get("GITHUB_WORKSPACE", "."), "flaky_rows")
 os.makedirs(out_dir, exist_ok=True)
 out = os.path.join(out_dir, f"{tool}.csv")
 with open(out, "w", newline="") as fh:
-    w = csv.writer(fh); w.writerow(COLUMNS)
+    w = csv.writer(fh)
+    w.writerow(RUN_COLUMNS)
     for t in sorted(names):
-        m = find_match(t)
         if tool == "idflakies" and seen.get(t):
             rate = f"{len(fails[t])}/{len(seen[t])}"
         elif tool == "nondex" and runs:
             rate = f"{len(fails[t] & runs)}/{len(runs)}"
         else:
-            rate = "n/a"
-        w.writerow([tool, rate, "Yes" if m else "No", repo_url, sha, module_path, t,
-                    m.get("Category", "") if m else "", m.get("Status", "") if m else "",
-                    m.get("PR Link", "") if m else ""])
+            rate = "n/a"   # FlakeSync reports a verdict, not pass/fail counts
+        w.writerow([tool, rate, repo_url, sha, module_path, t])
 print(f"tool={tool} runs_seen={len(runs)} tests={len(names)} -> {out}")

@@ -140,24 +140,14 @@ jobs:
       - name: Run Aggregator Script
         run: python .github/scripts/aggregate_results.py
 
+      - name: Download pr-data.csv for the merge
+        if: always()
+        continue-on-error: true
+        run: curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors https://raw.githubusercontent.com/TestingResearchIllinois/idoft/main/pr-data.csv -o pr-data.csv
+
       - name: Merge CSV rows
         if: always()
-        run: |
-          python3 - <<'EOF'
-          import csv, glob
-          COLUMNS = ["Tool","Failure rate","In pr-data","Project URL","SHA Detected","Module Path",
-                     "Fully-Qualified Test Name (packageName.ClassName.methodName)","Category","Status","PR Link"]
-          seen, rows = set(), []
-          for p in sorted(glob.glob("artifacts/rows-*/*.csv")):
-              with open(p, newline="") as fh:
-                  for r in csv.DictReader(fh):
-                      key = tuple(r[c] for c in COLUMNS)
-                      if key not in seen:
-                          seen.add(key); rows.append(key)
-          with open("flaky_tests.csv", "w", newline="") as fh:
-              w = csv.writer(fh); w.writerow(COLUMNS); w.writerows(rows)
-          print(len(rows), "rows merged")
-          EOF
+        run: python3 .github/scripts/merge_rows.py pr-data.csv "artifacts/rows-*/*.csv" flaky_tests.csv
 
       - name: Upload merged flaky_tests.csv
         if: always()
