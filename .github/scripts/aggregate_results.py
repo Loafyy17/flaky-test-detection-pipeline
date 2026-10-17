@@ -182,19 +182,18 @@ for art_dir in artifact_dirs:
             print(f"Error reading NonDex file {nd_file}: {e}")
 
     # --- 5. Parse FlakeSync Results ---
-    flakesync_files = [f for f in all_files if f.startswith(art_dir_clean) and ".flakesync" in f and f.endswith("ResultMethods.txt")]
-    for rm_file in flakesync_files:
-        loc_count = 0 
+    # A test counts as FlakeSync-detected when delaylocs wrote a non-empty Locations file,
+    # i.e. injecting a delay at those locations made the test fail.
+    flakesync_files = [f for f in all_files if f.startswith(art_dir_clean) and ".flakesync" in f and f.endswith("Locations.txt")]
+    for loc_file in flakesync_files:
         try:
-            base_name = os.path.basename(rm_file).replace("ResultMethods.txt", "").rstrip(".")
-            
-            loc_file = rm_file.replace("ResultMethods.txt", "Locations.txt")
-            if os.path.exists(loc_file):
-                with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
-                    loc_count = sum(1 for line in f if line.strip())
-            flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
+            base_name = os.path.basename(loc_file).replace("Locations.txt", "").rstrip(".-")
+            with open(loc_file, "r", encoding="utf-8", errors="ignore") as f:
+                loc_count = sum(1 for line in f if line.strip())
+            if loc_count > 0:
+                flakesync_rows.append([repo_name_clean, sha, base_name, loc_count])
         except Exception as e:
-            print(f"Error reading FlakeSync file {rm_file}: {e}")
+            print(f"Error reading FlakeSync file {loc_file}: {e}")
 
 # Deduplicate row structures cleanly across metrics collections
 idflakies_rows = [list(x) for x in set(tuple(r) for r in idflakies_rows)]

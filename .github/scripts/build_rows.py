@@ -135,9 +135,11 @@ elif tool == "nondex":
 
 else:  # flakesync
     names = set()
+    # Detected = delaylocs found at least one location where an injected delay makes the
+    # test fail. ResultMethods.txt alone only means concurrent methods exist.
     for p in files_under(".flakesync"):
-        if p.endswith("ResultMethods.txt"):
-            n = norm_test(os.path.basename(p).replace("ResultMethods.txt", ""))
+        if p.endswith("Locations.txt") and any(l.strip() for l in lines_of(p)):
+            n = norm_test(os.path.basename(p).replace("Locations.txt", ""))
             if n: names.add(n)
 
 out_dir = os.path.join(os.environ.get("GITHUB_WORKSPACE", "."), "flaky_rows")
