@@ -1,0 +1,33 @@
+name: Save run metadata
+description: >
+  Writes .output_metadata/run_metadata.json at the workspace root and, when the
+  target is a submodule, copies it into that module as well.
+
+inputs:
+  repo-url:
+    description: GitHub URL of the repository under test
+    required: true
+  sha:
+    description: Commit SHA under test
+    required: true
+  module-path:
+    description: Module path inside the repository, or . for the root
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write run_metadata.json
+      shell: bash
+      env:
+        REPO_URL: ${{ inputs.repo-url }}
+        SHA: ${{ inputs.sha }}
+        MODULE_PATH: ${{ inputs.module-path }}
+      run: |
+        mkdir -p .output_metadata
+        printf '{"github_url": "%s", "sha": "%s", "module_path": "%s"}\n' \
+          "$REPO_URL" "$SHA" "$MODULE_PATH" > .output_metadata/run_metadata.json
+        if [ "$MODULE_PATH" != "." ]; then
+          mkdir -p "$MODULE_PATH/.output_metadata"
+          cp .output_metadata/run_metadata.json "$MODULE_PATH/.output_metadata/run_metadata.json"
+        fi

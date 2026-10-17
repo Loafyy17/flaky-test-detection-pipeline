@@ -1,0 +1,50 @@
+name: Archive detector results and logs
+description: >
+  Uploads the run metadata plus the tool's result files, and the tool's log, as
+  artifacts named so the aggregate job can find them
+  (TOOL-results-REPO-SHA and TOOL_logs_REPO_SHA).
+
+inputs:
+  tool:
+    description: Short tool name (idflakies, nondex or flakesync)
+    required: true
+  repo-name:
+    description: Repository name, used in the artifact names
+    required: true
+  sha:
+    description: Commit SHA, used in the results artifact name
+    required: true
+  results-glob:
+    description: Glob for the tool's result files (for example **/.nondex/**)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Archive ${{ inputs.tool }} results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.tool }}-results-${{ inputs.repo-name }}-${{ inputs.sha }}
+        path: |
+          **/run_metadata.json
+          ${{ inputs.results-glob }}
+        include-hidden-files: true
+        retention-days: 7
+
+    - name: Archive ${{ inputs.tool }} logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.tool }}_logs_${{ inputs.repo-name }}_${{ inputs.sha }}
+        path: '**/logs/${{ inputs.tool }}_log.txt'
+        retention-days: 7
+
+    - name: Archive ${{ inputs.tool }} CSV rows
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rows-${{ inputs.tool }}-${{ inputs.repo-name }}-${{ inputs.sha }}
+        path: flaky_rows/${{ inputs.tool }}.csv
+        if-no-files-found: ignore
+        retention-days: 7

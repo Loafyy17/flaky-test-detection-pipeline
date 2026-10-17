@@ -1,0 +1,101 @@
+name: Run iDFlakies
+on:
+  workflow_call:
+    inputs:
+      repo_slug:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      module_path:
+        required: true
+        type: string
+      repo_name:
+        required: true
+        type: string
+      repo_url:
+        required: true
+        type: string
+      max_job_timeout:
+        required: true
+        type: string
+      force_java_version:
+        required: false
+        type: string
+      idflakies_java9plus:
+        required: false
+        type: boolean
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ fromJson(inputs.max_job_timeout) }}
+    steps:
+      - name: Checkout Target Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo_slug }}
+          ref: ${{ inputs.sha }}
+
+      # The target repo owns the workspace root, so shared actions/scripts live in a hidden sub-folder.
+      - name: Checkout Pipeline Actions and Scripts
+        uses: actions/checkout@v4
+        with:
+          path: .pipeline-tools
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Project JDK
+        id: jdk
+        uses: ./.pipeline-tools/.github/actions/detect-java
+        with:
+          module-path: ${{ inputs.module_path }}
+          force-java-version: ${{ inputs.force_java_version }}
+
+      - name: Save Run Metadata
+        uses: ./.pipeline-tools/.github/actions/save-metadata
+        with:
+          repo-url: ${{ inputs.repo_url }}
+          sha: ${{ inputs.sha }}
+          module-path: ${{ inputs.module_path }}
+
+      - name: Install Root Project Dependencies
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -pl ${{ inputs.module_path }} -am
+
+      # Always runs on Java 8; on Java 11/17 only when the idflakies_java9plus toggle is on.
+      - name: Run iDFlakies
+        if: steps.jdk.outputs.java-version == '8' || inputs.idflakies_java9plus
+        continue-on-error: true
+        uses: ./.pipeline-tools/.github/actions/run-detector
+        with:
+          tool: idflakies
+          module-path: ${{ inputs.module_path }}
+          job-timeout-minutes: ${{ inputs.max_job_timeout }}
+          mvn-args: >-
+            edu.illinois.cs:idflakies-maven-plugin:2.0.0:detect
+            -Dstyle.color=always
+            -Ddetector.detector_type=random-class-method
+            -Ddt.randomize.rounds=10
+            -Ddt.detector.original_order.all_must_pass=false
+            -Ddt.detector.original_order.retry_count=3
+
+      - name: Build CSV rows
+        if: always()
+        continue-on-error: true
+        env:
+          REPO_URL: ${{ inputs.repo_url }}
+          SHA: ${{ inputs.sha }}
+          MODULE_PATH: ${{ inputs.module_path }}
+        run: python3 .pipeline-tools/.github/scripts/build_rows.py idflakies "$REPO_URL" "$SHA" "$MODULE_PATH"
+
+      - name: Archive iDFlakies Results and Logs
+        if: always()
+        uses: ./.pipeline-tools/.github/actions/archive-results
+        with:
+          tool: idflakies
+          repo-name: ${{ inputs.repo_name }}
+          sha: ${{ inputs.sha }}
+          results-glob: '**/.dtfixingtools/**'
