@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 import os
+import re
 import sys
 import warnings
 from urllib.parse import urlparse
@@ -63,6 +64,10 @@ for _, row in deduped.iterrows():
 
 
     module_path = row['Module Path']
+    # repo_name only feeds job and artifact names. Several modules of one repo@sha would otherwise
+    # share an artifact name and upload-artifact@v4 rejects duplicates, so add a filename-safe module slug.
+    if module_path not in ('.', ''):
+        repo_name = f"{repo_name}--{re.sub(r'[^A-Za-z0-9._-]+', '_', module_path).strip('_')}"
 
     # Group by repo_url, sha AND module so each matrix job only gets tests that live in its
     # own module (otherwise every module of a repo would be handed every module's tests)

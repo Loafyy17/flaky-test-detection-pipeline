@@ -8,7 +8,7 @@ from pr-data.csv.
 import csv, glob, io, sys
 from collections import defaultdict
 
-from csv_common import FINAL_COLUMNS, TEST_COL, norm_module, norm_test, norm_url
+from csv_common import FINAL_COLUMNS_V2 as FINAL_COLUMNS, DELAY_COL, TEST_COL, norm_module, norm_test, norm_url
 
 pr_path = sys.argv[1] if len(sys.argv) > 1 else "pr-data.csv"
 rows_glob = sys.argv[2] if len(sys.argv) > 2 else "artifacts/rows-*/*.csv"
@@ -57,19 +57,19 @@ for p in files:
                 matched += 1
                 # Project URL .. Notes come from the matching pr-data row (pr-data is the source
                 # of truth); our own detection values are only the fallback for blank fields.
-                row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a", "Yes",
+                row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a", r.get(DELAY_COL, ""), "Yes",
                        m.get("Project URL") or url, m.get("SHA Detected") or sha,
                        m.get("Module Path") or mod, test, m.get("Category", ""), m.get("Status", ""),
                        m.get("PR Link", ""), m.get("Notes", "")]
             else:
-                row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a",
+                row = [r.get("Tool", ""), r.get("Failure rate", "") or "n/a", r.get(DELAY_COL, ""),
                        "No" if pr_loaded else "Unknown", url, sha, mod, test, "", "", "", ""]
             key = tuple(row)
             if key not in seen:
                 seen.add(key)
                 rows.append(row)
 
-rows.sort(key=lambda r: (tool_order.get(r[0], 9), r[3].lower(), r[6]))
+rows.sort(key=lambda r: (tool_order.get(r[0], 9), r[4].lower(), r[7]))
 with open(out_path, "w", newline="", encoding="utf-8") as fh:
     w = csv.writer(fh)
     w.writerow(FINAL_COLUMNS)

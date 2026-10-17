@@ -9,6 +9,13 @@ RUN_COLUMNS = ["Tool", "Failure rate", "Project URL", "SHA Detected", "Module Pa
 FINAL_COLUMNS = ["Tool", "Failure rate", "In pr-data", "Project URL", "SHA Detected",
                  "Module Path", TEST_COL, "Category", "Status", "PR Link", "Notes"]
 
+# Layout used by build_rows.py / merge_rows.py: adds "Delay runs failed" (FlakeSync only: delay-injected
+# runs that failed / delay runs, out of the 8 delay sizes; blank for iDFlakies and NonDex).
+# The *_new scripts keep using the lists above.
+DELAY_COL = "Delay runs failed"
+RUN_COLUMNS_V2 = RUN_COLUMNS[:2] + [DELAY_COL] + RUN_COLUMNS[2:]
+FINAL_COLUMNS_V2 = FINAL_COLUMNS[:2] + [DELAY_COL] + FINAL_COLUMNS[2:]
+
 
 def norm_url(u):
     u = (u or "").strip().rstrip("/")
