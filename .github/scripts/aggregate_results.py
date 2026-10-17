@@ -44,6 +44,13 @@ def clean_and_validate_test_name(raw_line):
     if "(" in line and ")" in line: line = line.split("(")[0].strip()
     if " " in line: line = line.split()[0].strip()
 
+    # Exception / framework class names (e.g. java.lang.AssertionError) are not tests
+    if line.startswith(("java.", "javax.", "jdk.", "sun.", "org.junit.", "junit.", "org.opentest4j.")):
+        return None
+    last = line.split(".")[-1]
+    if last[:1].isupper() and last.endswith(("Error", "Exception", "Failure")):
+        return None
+
     # Must be a valid Java test identifier (at least 2 dots, e.g., com.example.FooTest.testBar)
     parts = line.split(".")
     if len(parts) >= 3 and all(p.isidentifier() for p in parts):

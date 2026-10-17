@@ -145,9 +145,13 @@ jobs:
         continue-on-error: true
         run: curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors https://raw.githubusercontent.com/TestingResearchIllinois/idoft/main/pr-data.csv -o pr-data.csv
 
+      - name: Collect CSV rows from result artifacts
+        if: always()
+        run: python3 .github/scripts/collect_rows.py
+
       - name: Merge CSV rows
         if: always()
-        run: python3 .github/scripts/merge_rows.py pr-data.csv "artifacts/rows-*/*.csv" flaky_tests.csv
+        run: python3 .github/scripts/merge_rows.py pr-data.csv "collected_rows/*/flaky_rows/*.csv" flaky_tests.csv
 
       - name: Upload merged flaky_tests.csv
         if: always()

@@ -162,7 +162,7 @@ jobs:
           REPO_URL: ${{ inputs.repo_url }}
           SHA: ${{ inputs.sha }}
           MODULE_PATH: ${{ inputs.module_path }}
-        run: python3 .pipeline-tools/.github/scripts/build_rows.py idflakies "$REPO_URL" "$SHA" "$MODULE_PATH"
+        run: python3 .pipeline-tools/.github/scripts/build_rows.py flakesync "$REPO_URL" "$SHA" "$MODULE_PATH"
 
       - name: Archive FlakeSync Results and Logs
         if: always()
