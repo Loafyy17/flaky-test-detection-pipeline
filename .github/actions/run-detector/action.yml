@@ -27,6 +27,15 @@ inputs:
     required: false
     default: ""
 
+  followup-goals:
+    description: >
+      Optional space-separated Maven goals run, for each test in test-names, right after
+      mvn-args (same -Dflakesync.testName, same shared time limit). Used for FlakeSync so
+      concurrentfind is followed by delaylocs. Skipped for a test whose ResultMethods file
+      is empty (no concurrent methods to delay).
+    required: false
+    default: ""
+
 runs:
   using: composite
   steps:
@@ -38,6 +47,7 @@ runs:
         MVN_ARGS: ${{ inputs.mvn-args }}
         JOB_TIMEOUT: ${{ inputs.job-timeout-minutes }}
         TEST_NAMES: ${{ inputs.test-names }}
+        FOLLOWUP_GOALS: ${{ inputs.followup-goals }}
       run: |
         mkdir -p logs
         unset MAVEN_OPTS
@@ -58,21 +68,33 @@ runs:
           : > "logs/${TOOL}_log.txt"
           IFS=',' read -ra TESTS <<< "$TEST_NAMES"
           DEADLINE=$(( SECONDS + ${LIMIT:-0} * 60 ))
+          run_goal() {   # run_goal <goals> <test> <label>; returns 1 when the time budget is gone
+            local goals="$1" t="$2" label="$3" tc=()
+            if [ -n "$JOB_TIMEOUT" ]; then
+              local remaining=$(( DEADLINE - SECONDS ))
+              if [ "$remaining" -le 0 ]; then
+                echo "Time budget used up; skipping remaining tests" | tee -a "logs/${TOOL}_log.txt"
+                return 1
+              fi
+              tc=(timeout --foreground "${remaining}s")
+            fi
+            echo "=== ${TOOL}: $t ($label) ===" | tee -a "logs/${TOOL}_log.txt"
+            # goals is intentionally unquoted so it splits into separate arguments
+            # shellcheck disable=SC2086
+            "${tc[@]}" mvn $goals -Dflakesync.testName="$t" "${COMMON[@]}" 2>&1 | tee -a "logs/${TOOL}_log.txt" || true
+            return 0
+          }
           for T in "${TESTS[@]}"; do
             [ -z "$T" ] && continue
-            TIMEOUT_CMD=()
-            if [ -n "$JOB_TIMEOUT" ]; then
-              REMAINING=$(( DEADLINE - SECONDS ))
-              if [ "$REMAINING" -le 0 ]; then
-                echo "Time budget used up; skipping remaining tests" | tee -a "logs/${TOOL}_log.txt"
-                break
+            run_goal "$MVN_ARGS" "$T" "main" || break
+            for G in $FOLLOWUP_GOALS; do
+              RM=$(find . -path '*/.flakesync/*' \( -name "${T}-ResultMethods.txt" -o -name "${T}.ResultMethods.txt" -o -name "${T}ResultMethods.txt" \) 2>/dev/null | head -n1)
+              if [ -n "$RM" ] && [ ! -s "$RM" ]; then
+                echo "=== ${TOOL}: $T: no concurrent methods found, skipping ${G##*:} ===" | tee -a "logs/${TOOL}_log.txt"
+                continue
               fi
-              TIMEOUT_CMD=(timeout --foreground "${REMAINING}s")
-            fi
-            echo "=== ${TOOL}: $T ===" | tee -a "logs/${TOOL}_log.txt"
-            # MVN_ARGS is intentionally unquoted so it splits into separate arguments
-            # shellcheck disable=SC2086
-            "${TIMEOUT_CMD[@]}" mvn $MVN_ARGS -Dflakesync.testName="$T" "${COMMON[@]}" 2>&1 | tee -a "logs/${TOOL}_log.txt" || true
+              run_goal "$G" "$T" "${G##*:}" || break 2
+            done
           done
         else
           # MVN_ARGS is intentionally unquoted so it splits into separate arguments

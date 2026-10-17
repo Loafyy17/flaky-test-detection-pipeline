@@ -48,12 +48,12 @@ jobs:
             .github/scripts
           sparse-checkout-cone-mode: false
 
-      # Detection tools are always BUILT with JDK 8; the project's JDK is switched afterward.
-      - name: Set up JDK 8 (build detection tools)
-        uses: actions/setup-java@v5
+      # Detection tools are BUILT with JDK 11; the project's JDK is switched afterward.
+      - name: Set up JDK 11 (build detection tools)
+        uses: actions/setup-java@v4
         with:
           distribution: 'corretto'
-          java-version: '8'
+          java-version: '11'
 
       # Must run BEFORE the plugin builds, or it would wipe what they install.
       - name: Configure Clean Global Maven Repositories
@@ -153,7 +153,17 @@ jobs:
           module-path: ${{ inputs.module_path }}
           mvn-args: edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:concurrentfind
           test-names: ${{ inputs.test_names }}
+          followup-goals: edu.utexas.ece:flakesync-maven-plugin:1.0-SNAPSHOT:delaylocs
           job-timeout-minutes: ${{ inputs.max_job_timeout }}
+
+      - name: Build CSV rows
+        if: always()
+        continue-on-error: true
+        env:
+          REPO_URL: ${{ inputs.repo_url }}
+          SHA: ${{ inputs.sha }}
+          MODULE_PATH: ${{ inputs.module_path }}
+        run: python3 .pipeline-tools/.github/scripts/build_rows.py flakesync "$REPO_URL" "$SHA" "$MODULE_PATH"
 
       - name: Archive FlakeSync Results and Logs
         if: always()

@@ -19,6 +19,8 @@ df.columns = df.columns.str.strip()
 # Clean and normalize columns upfront to ensure reliable downstream filtering matches
 df['Project URL'] = df['Project URL'].astype(str).str.strip()
 df['SHA Detected'] = df['SHA Detected'].astype(str).str.strip()
+# Normalise Module Path (blank / missing means the repo root)
+df['Module Path'] = df['Module Path'].fillna('.').astype(str).str.strip().replace('', '.')
 
 # Deduplicate rows based on the core project info to match your target matrix structure
 deduped = df[['Project URL', 'SHA Detected', 'Module Path']].drop_duplicates().reset_index(drop=True)
@@ -60,9 +62,14 @@ for _, row in deduped.iterrows():
     sha = row['SHA Detected']
 
 
-    # Group by BOTH repo_url and sha to prevent test leaking between overlapping forks/hashes
-    matching_rows = df[(df['Project URL'] == repo_url) & (df['SHA Detected'] == sha)]
-    raw_tests = matching_rows[test_col].dropna().astype(str).tolist()
+    module_path = row['Module Path']
+
+    # Group by repo_url, sha AND module so each matrix job only gets tests that live in its
+    # own module (otherwise every module of a repo would be handed every module's tests)
+    matching_rows = df[(df['Project URL'] == repo_url) & (df['SHA Detected'] == sha)
+                       & (df['Module Path'] == module_path)]
+    # Drop blanks and repeated names (pr-data can list one test several times)
+    raw_tests = list(dict.fromkeys(t.strip() for t in matching_rows[test_col].dropna().astype(str) if t.strip()))
 
     # Format test paths with '#' character separating class from method for FlakeSync compatibility
     formatted_tests = []
@@ -80,7 +87,7 @@ for _, row in deduped.iterrows():
         "repo_slug": repo_slug,
         "repo_name": repo_name,
         "sha": sha,
-        "module_path": str(row['Module Path']).strip() if pd.notna(row['Module Path']) else ".",
+        "module_path": module_path,
         "test_names": ",".join(formatted_tests) # Pass as comma-separated string to runner loop
     })
 

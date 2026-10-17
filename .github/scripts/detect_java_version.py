@@ -183,6 +183,15 @@ def pick_supported(declared):
             return s
     return SUPPORTED[-1]
 
+def jvm_config_signal(module_path):
+    found = []
+    for base in {".", module_path}:
+        p = os.path.join(base, ".mvn", "jvm.config")
+        if os.path.isfile(p):
+            txt = open(p, errors="ignore").read()
+            if re.search(r"--(add-exports|add-opens|add-modules|illegal-access)\b", txt):
+                found.append((11, "Java 9+ flags in " + p))
+    return found
 
 def main():
     module_path = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "."
@@ -195,6 +204,7 @@ def main():
     else:
         chain = pom_chain(".", module_path)
         found = find_declared(chain, merged_properties(chain)) if chain else []
+        found += jvm_config_signal(module_path)
         if not found:
             declared, chosen = 8, 8
             reason = "no Java level declared (or no pom.xml found); defaulting to 8"

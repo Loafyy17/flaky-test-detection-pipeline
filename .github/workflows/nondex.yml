@@ -70,7 +70,16 @@ jobs:
         with:
           tool: nondex
           module-path: ${{ inputs.module_path }}
-          mvn-args: edu.illinois:nondex-maven-plugin:${{ env.NONDEX_VERSION }}:nondex
+          mvn-args: edu.illinois:nondex-maven-plugin:${{ env.NONDEX_VERSION }}:nondex -DnondexRuns=10
+
+      - name: Build CSV rows
+        if: always()
+        continue-on-error: true
+        env:
+          REPO_URL: ${{ inputs.repo_url }}
+          SHA: ${{ inputs.sha }}
+          MODULE_PATH: ${{ inputs.module_path }}
+        run: python3 .pipeline-tools/.github/scripts/build_rows.py nondex "$REPO_URL" "$SHA" "$MODULE_PATH"
 
       - name: Archive NonDex Results and Logs
         if: always()

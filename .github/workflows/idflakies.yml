@@ -82,6 +82,15 @@ jobs:
             -Ddt.detector.original_order.all_must_pass=false
             -Ddt.detector.original_order.retry_count=3
 
+      - name: Build CSV rows
+        if: always()
+        continue-on-error: true
+        env:
+          REPO_URL: ${{ inputs.repo_url }}
+          SHA: ${{ inputs.sha }}
+          MODULE_PATH: ${{ inputs.module_path }}
+        run: python3 .pipeline-tools/.github/scripts/build_rows.py idflakies "$REPO_URL" "$SHA" "$MODULE_PATH"
+
       - name: Archive iDFlakies Results and Logs
         if: always()
         uses: ./.pipeline-tools/.github/actions/archive-results
