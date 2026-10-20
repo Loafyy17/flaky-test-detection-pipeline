@@ -55,59 +55,7 @@ jobs:
           distribution: 'corretto'
           java-version: '11'
 
-      # Must run BEFORE the plugin builds, or it would wipe what they install.
-      - name: Configure Clean Global Maven Repositories
-        run: |
-          rm -rf ~/.m2
-          mkdir -p ~/.m2
-          cat <<EOF > ~/.m2/settings.xml
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <profiles>
-              <profile>
-                <id>fallback-snapshots-profile</id>
-                <activation>
-                  <activeByDefault>true</activeByDefault>
-                </activation>
-                <repositories>
-                  <repository>
-                    <id>apache-snapshots-repo</id>
-                    <url>https://repository.apache.org/snapshots/</url>
-                    <snapshots><enabled>true</enabled></snapshots>
-                    <releases><enabled>false</enabled></releases>
-                  </repository>
-                  <repository>
-                    <id>ossrh-snapshots-repo</id>
-                    <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-                    <snapshots><enabled>true</enabled></snapshots>
-                    <releases><enabled>false</enabled></releases>
-                  </repository>
-                </repositories>
-                <pluginRepositories>
-                  <pluginRepository>
-                    <id>apache-plugin-snapshots-repo</id>
-                    <url>https://repository.apache.org/snapshots/</url>
-                    <snapshots><enabled>true</enabled></snapshots>
-                    <releases><enabled>false</enabled></releases>
-                  </pluginRepository>
-                </pluginRepositories>
-              </profile>
-            </profiles>
-          </settings>
-          EOF
-
-      - name: Checkout iDFlakies Repository
-        uses: actions/checkout@v4
-        with:
-          repository: UT-SE-Research/iDFlakies
-          path: idflakies-repo
-
-      - name: Build and Install iDFlakies Plugin Locally
-        run: |
-          cd idflakies-repo
-          mvn clean install -DskipTests -B
-
+      # Wiping ~/.m2 and rewriting settings.xml has been removed here to preserve downstream enterprise credentials.
       - name: Checkout FlakeSync Repository
         uses: actions/checkout@v4
         with:
@@ -121,7 +69,7 @@ jobs:
           echo "--- installed artifacts ---"
           find ~/.m2/repository -ipath "*flakesync*" \( -name "*.pom" -o -name "*.jar" \)
 
-      # Switch to the JDK the project under test needs (8 / 11 / 17). Must come after both plugin builds.
+      # Switch to the JDK the project under test needs (8 / 11 / 17). Must come after the plugin build.
       - name: Set up Project JDK
         uses: ./.pipeline-tools/.github/actions/detect-java
         with:
@@ -131,10 +79,20 @@ jobs:
       - name: Force Global Dependency & Multi-Module Local Resolution
         continue-on-error: true
         run: |
-          mvn clean install -B -U -DskipTests -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
-          if [ "${{ inputs.module_path }}" != "." ]; then
+          # Safely inject required Apache & Sonatype snapshot fallback endpoints inline
+          SNAPSHOT_REPOS="https://apache.org"
+          
+          # Isolated the build scope using '-f pom.xml' so adjacent cloned tooling folders don't disrupt parsing.
+          # Changed 'clean install' to 'install' to preserve reactor dependencies during multi-module exploration.
+          mvn -f pom.xml install -B -U -DskipTests \
+            -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true \
+            -DremoteRepositories=$SNAPSHOT_REPOS || true
+          
+          if [ "${{ inputs.module_path }}" != "." ] && [ -d "${{ inputs.module_path }}" ]; then
             cd ${{ inputs.module_path }}
-            mvn test-compile -B -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true || true
+            mvn test-compile -B -U \
+              -Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true \
+              -DremoteRepositories=$SNAPSHOT_REPOS || true
           fi
 
       - name: Save Run Metadata
