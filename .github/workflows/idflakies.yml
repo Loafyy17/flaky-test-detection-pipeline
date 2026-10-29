@@ -88,7 +88,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
       - name: Install Root Project Dependencies
-        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -pl ${{ inputs.module_path }} -am
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -pl ${{ inputs.module_path }} -am -U
 
       # Always runs on Java 8; on Java 11/17 only when the idflakies_java9plus toggle is on.
       - name: Run iDFlakies
