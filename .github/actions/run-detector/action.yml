@@ -53,9 +53,11 @@ runs:
         unset MAVEN_OPTS
 
         SKIPS=(-Dcheckstyle.skip=true -Drat.skip=true -Dmaven.javadoc.skip=true)
-        COMMON=(-B -Dmaven.test.failure.ignore=true -DfailIfNoTests=false "${SKIPS[@]}")
+        # ADD -U HERE so every mvn call inside the detector forces snapshot updates
+        COMMON=(-B -Dmaven.test.failure.ignore=true -DfailIfNoTests=false -U "${SKIPS[@]}")
 
-        mvn test-compile -q -B -DskipTests "${SKIPS[@]}" || true
+        # Add -U here as well
+        mvn test-compile -q -B -DskipTests -U "${SKIPS[@]}" || true
 
         TIMEOUT_CMD=()
         if [ -n "$JOB_TIMEOUT" ]; then
