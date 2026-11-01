@@ -31,6 +31,12 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(inputs.max_job_timeout) }}
+
+    # 1. Added job-level permissions
+    permissions:
+      contents: read
+      packages: read
+
     steps:
       - name: Checkout Target Repository
         uses: actions/checkout@v4
@@ -55,7 +61,52 @@ jobs:
           distribution: 'corretto'
           java-version: '11'
 
-      # Wiping ~/.m2 and rewriting settings.xml has been removed here to preserve downstream enterprise credentials.
+      # 2. Configure Maven Settings with GITHUB_TOKEN and Global Snapshots
+      - name: Configure Maven Settings with GITHUB_TOKEN and Snapshots
+        run: |
+          mkdir -p ~/.m2
+          cat << EOF > ~/.m2/settings.xml
+          <settings>
+            <profiles>
+              <profile>
+                <id>global-snapshots</id>
+                <repositories>
+                  <repository>
+                    <id>apache.snapshots</id>
+                    <url>https://repository.apache.org/snapshots</url>
+                    <releases><enabled>false</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                  <repository>
+                    <id>sonatype-snapshots</id>
+                    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+                    <releases><enabled>false</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                  <repository>
+                    <id>spring-snapshots</id>
+                    <url>https://repo.spring.io/snapshot</url>
+                    <releases><enabled>false</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>global-snapshots</activeProfile>
+            </activeProfiles>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${{ github.actor }}</username>
+                <password>${{ secrets.GITHUB_TOKEN }}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Checkout FlakeSync Repository
         uses: actions/checkout@v4
         with:
@@ -69,8 +120,13 @@ jobs:
           echo "--- installed artifacts ---"
           find ~/.m2/repository -ipath "*flakesync*" \( -name "*.pom" -o -name "*.jar" \)
 
+      # 3. Added full root project dependency installation to populate local snapshot BOMs/parents
+      - name: Install Root Project Dependencies
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -U
+
       # Switch to the JDK the project under test needs (8 / 11 / 17). Must come after the plugin build.
       - name: Set up Project JDK
+        id: jdk
         uses: ./.pipeline-tools/.github/actions/detect-java
         with:
           module-path: ${{ inputs.module_path }}
