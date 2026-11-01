@@ -31,6 +31,12 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJson(inputs.max_job_timeout) }}
+
+    # Added permissions to allow GITHUB_TOKEN to read packages/repos
+    permissions:
+      contents: read
+      packages: read
+
     steps:
       - name: Checkout Target Repository
         uses: actions/checkout@v4
@@ -61,8 +67,59 @@ jobs:
           sha: ${{ inputs.sha }}
           module-path: ${{ inputs.module_path }}
           
+      # Inject GITHUB_TOKEN into Maven settings.xml before it runs
+      # Allows us to authenticate and resolve parent/import POMs
+      # Added universal snapshots so multiple projects can run
+      - name: Configure Maven Settings with Universal Snapshots
+        run: |
+          mkdir -p ~/.m2
+          cat << EOF > ~/.m2/settings.xml
+          <settings>
+            <profiles>
+              <profile>
+                <id>global-snapshots</id>
+                <repositories>
+                  <!-- Apache Snapshots -->
+                  <repository>
+                    <id>apache.snapshots</id>
+                    <url>https://repository.apache.org/snapshots</url>
+                    <releases><enabled>false</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                  <!-- Sonatype / OSSRH Snapshots (common for many open-source Java projects) -->
+                  <repository>
+                    <id>sonatype-snapshots</id>
+                    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+                    <releases><enabled>false</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                  <!-- Spring Snapshots (if testing Spring-heavy projects) -->
+                  <repository>
+                    <id>spring-snapshots</id>
+                    <url>https://repo.spring.io/snapshot</url>
+                    <releases><enabled>false</enabled></releases>
+                    <snapshots><enabled>true</enabled></snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>global-snapshots</activeProfile>
+            </activeProfiles>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${{ github.actor }}</username>
+                <password>${{ secrets.GITHUB_TOKEN }}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install Root Project Dependencies
-        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -pl ${{ inputs.module_path }} -am
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Drat.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true -B -V -fn -U
 
       - name: Run NonDex
         continue-on-error: true
