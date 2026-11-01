@@ -54,13 +54,6 @@ jobs:
             .github/scripts
           sparse-checkout-cone-mode: false
 
-      # Detection tools are BUILT with JDK 11; the project's JDK is switched afterward.
-      - name: Set up JDK 11 (build detection tools)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'corretto'
-          java-version: '11'
-
       # 2. Configure Maven Settings with GITHUB_TOKEN and Global Snapshots
       - name: Configure Maven Settings with GITHUB_TOKEN and Snapshots
         run: |
@@ -113,6 +106,14 @@ jobs:
           repository: UT-SE-Research/FlakeSync
           path: flakesync-repo
 
+      # Switch to the JDK the project under test needs (8 / 11 / 17). Must come before root dependencies build.
+      - name: Set up Project JDK
+        id: jdk
+        uses: ./.pipeline-tools/.github/actions/detect-java
+        with:
+          module-path: ${{ inputs.module_path }}
+          force-java-version: ${{ inputs.force_java_version }}
+
       - name: Build FlakeSync Plugin Locally
         run: |
           cd flakesync-repo
@@ -124,14 +125,6 @@ jobs:
       - name: Install Root Project Dependencies
         run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -U
 
-      # Switch to the JDK the project under test needs (8 / 11 / 17). Must come after the plugin build.
-      - name: Set up Project JDK
-        id: jdk
-        uses: ./.pipeline-tools/.github/actions/detect-java
-        with:
-          module-path: ${{ inputs.module_path }}
-          force-java-version: ${{ inputs.force_java_version }}
-          
       - name: Save Run Metadata
         uses: ./.pipeline-tools/.github/actions/save-metadata
         with:
