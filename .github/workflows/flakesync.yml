@@ -123,8 +123,7 @@ jobs:
 
       # 3. Added full root project dependency installation to populate local snapshot BOMs/parents
       - name: Install Root Project Dependencies
-        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -U
-
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Drat.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true -B -V -fn -U
       - name: Save Run Metadata
         uses: ./.pipeline-tools/.github/actions/save-metadata
         with:
