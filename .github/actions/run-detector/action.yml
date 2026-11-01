@@ -56,8 +56,7 @@ runs:
         # ADD -U HERE so every mvn call inside the detector forces snapshot updates
         COMMON=(-B -Dmaven.test.failure.ignore=true -DfailIfNoTests=false -U "${SKIPS[@]}")
 
-        # Added -o (offline) to pre-compilation
-        mvn test-compile -q -B -DskipTests -o "${SKIPS[@]}" || true
+        mvn test-compile -q -B -DskipTests -U "${SKIPS[@]}" || true
 
         TIMEOUT_CMD=()
         if [ -n "$JOB_TIMEOUT" ]; then
