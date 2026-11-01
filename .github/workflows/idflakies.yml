@@ -36,7 +36,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    
+     
     steps:
       - name: Checkout Target Repository
         uses: actions/checkout@v4
@@ -118,9 +118,9 @@ jobs:
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
+         
       - name: Install Root Project Dependencies
-        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -B -V -fn -U
+        run: mvn clean install -DskipTests -Dmaven.javadoc.skip=true -Drat.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true -B -V -fn -U
 
       # Always runs on Java 8; on Java 11/17 only when the idflakies_java9plus toggle is on.
       - name: Run iDFlakies
