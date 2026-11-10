@@ -119,7 +119,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Root Project Dependencies
-        run: mvn clean install -pl ${{ inputs.module_path }} -am -DskipTests -Dmaven.javadoc.skip=true -Drat.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true -B -V -U
+        run: mvn clean install -pl ${{ inputs.module_path }} -am -DskipTests -Dmaven.javadoc.skip=true -Drat.skip=true -Dcheckstyle.skip=true -Denforcer.skip=true -B -V
 
       - name: Run NonDex
         continue-on-error: true
