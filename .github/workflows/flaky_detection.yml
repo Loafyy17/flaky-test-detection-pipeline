@@ -181,7 +181,7 @@ jobs:
             error_log.csv
             error_summary.txt
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 90
 
       - name: Organize Artifacts into Folders
         run: |
@@ -204,14 +204,14 @@ jobs:
         with:
           name: test_logs
           path: Logs/
-          retention-days: 7
+          retention-days: 90
 
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
           name: Results
           path: Results/
-          retention-days: 7
+          retention-days: 90
 
       - name: Upload Aggregated Summary CSVs
         uses: actions/upload-artifact@v4
@@ -221,7 +221,7 @@ jobs:
             idflakies_summary.csv
             nondex_summary.csv
             flakesync_td_tests.csv
-          retention-days: 7
+          retention-days: 90
 
   # ==========================================
   # STEP 5: COMPARE WITH IDOFT DATASET
@@ -260,4 +260,4 @@ jobs:
         with:
           name: unique_tests_report
           path: unique_tests.txt
-          retention-days: 7
+          retention-days: 90
